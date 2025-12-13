@@ -1,0 +1,196 @@
+import logging
+import asyncio
+from aiogram import Bot, Dispatcher, types
+from aiogram.enums import ParseMode
+from aiogram.filters import Command
+from aiogram.client.default import DefaultBotProperties
+from aiogram.fsm.storage.memory import MemoryStorage
+
+from bot.nlp_processor import NLPProcessor, ParsedQuery
+from database.query_manager import QueryManager
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class VideoStatsBot:
+    def __init__(self, token: str):
+        self.token = token
+        self.bot = Bot(
+            token=token, 
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+        )
+        self.dp = Dispatcher(storage=MemoryStorage())
+        self.nlp = NLPProcessor()
+        self.query_manager = QueryManager()
+        self._register_handlers()
+    
+    def _register_handlers(self):
+        """Регистрация обработчиков команд."""
+        self.dp.message.register(self.start_handler, Command(commands=["start"]))
+        self.dp.message.register(self.help_handler, Command(commands=["help"]))
+        self.dp.message.register(self.message_handler)
+    
+    async def start_handler(self, message: types.Message):
+        """Обработчик команды /start."""
+        welcome_text = """
+        🎬 <b>Бот статистики видео</b>
+        
+        Я могу ответить на вопросы о статистике видео.
+        
+        📊 <b>Примеры запросов:</b>
+        • Сколько всего видео есть в системе?
+        • Сколько видео у креатора с id ... вышло с 1 ноября 2025 по 5 ноября 2025?
+        • Сколько видео набрало больше 100000 просмотров?
+        • На сколько просмотров в сумме выросли все видео 28 ноября 2025?
+        • Сколько разных видео получали новые просмотры 27 ноября 2025?
+        
+        Просто напишите вопрос в чат!
+        """
+        await message.answer(welcome_text)
+    
+    async def help_handler(self, message: types.Message):
+        """Обработчик команды /helpю"""
+        help_text = """
+        🤖 <b>Помощь по боту:</b>
+        
+        <b>Доступные команды:</b>
+        /start - Начало работы
+        /help - Эта справка
+        
+        <b>Формат вопросов:</b>
+        • Используйте естественный русский язык
+        • Даты можно указывать как "28 ноября 2025" или "с 1 по 5 ноября 2025"
+        • В ответе вы получите одно число
+        
+        <b>Примеры:</b>
+        • "Сколько всего видео?"
+        • "Видео креатора id 123 за ноябрь 2025"
+        • "Видео с >50000 просмотров"
+        • "Прирост просмотров за вчера"
+        """
+        await message.answer(help_text)
+    
+    async def message_handler(self, message: types.Message):
+        """Обработчик текстовых сообщений."""
+        user_query = message.text
+        logger.info(f"Получен запрос: {user_query}")
+        
+        try:
+            # Распознаем намерение пользователя
+            parsed_query = self.nlp.parse_query(user_query)
+            logger.info(f"🎯 Распознан интент: {parsed_query.intent}")
+            logger.info(f"📊 Параметры: {parsed_query.parameters}")
+            
+            # Обрабатываем запрос
+            response = await self._process_parsed_query(parsed_query)
+            
+            # Отправляем ответ
+            await message.answer(response)
+            logger.info(f"📤 Отправлен ответ: {response[:50]}...")
+            
+        except Exception as e:
+            logger.error(f"Ошибка обработки запроса: {e}")
+            error_msg = (
+                "❌ Произошла ошибка при обработке запроса.\n"
+                "Попробуйте переформулировать вопрос или проверьте корректность данных."
+            )
+            await message.answer(error_msg)
+    
+    async def _process_parsed_query(self, parsed_query: ParsedQuery) -> str:
+        """Обработка распарсенного запроса."""
+        
+        if parsed_query.intent == "total_videos":
+            count = self.query_manager.get_total_videos()
+            return f"📊 Всего видео в системе: <b>{count:,}</b>"
+        
+        elif parsed_query.intent == "videos_by_creator":
+            creator_id = parsed_query.parameters.get("creator_id")
+            start_date = parsed_query.parameters.get("start_date")
+            end_date = parsed_query.parameters.get("end_date")
+            
+            if not creator_id:
+                return "❌ Не указан ID креатора. Пример: 'Сколько видео у креатора с id user123?'"
+            
+            count = self.query_manager.get_videos_by_creator(
+                creator_id, start_date, end_date
+            )
+            
+            date_info = ""
+            if start_date and end_date:
+                date_info = f" за период с {start_date} по {end_date}"
+            elif start_date:
+                date_info = f" начиная с {start_date}"
+            elif end_date:
+                date_info = f" до {end_date}"
+            
+            return f"🎬 Видео у креатора {creator_id}{date_info}: <b>{count:,}</b>"
+        
+        elif parsed_query.intent == "videos_by_views":
+            min_views = parsed_query.parameters.get("min_views", 100000)
+            count = self.query_manager.get_videos_with_views_above(min_views)
+            return f"👁️ Видео с более чем {min_views:,} просмотров: <b>{count:,}</b>"
+        
+        elif parsed_query.intent == "total_growth":
+            target_date = parsed_query.parameters.get("date")
+    
+            if not target_date:
+                # Пытаемся получить последнюю дату из данных
+                try:
+                    # Проверяем есть ли данные вообще
+                    conn = self.query_manager._get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT MAX(DATE(created_at)) FROM video_snapshots WHERE delta_views_count > 0")
+                    result = cursor.fetchone()
+                    cursor.close()
+                    conn.close()
+            
+                    if result and result[0]:
+                        target_date = result[0]
+                    else:
+                        return "❌ В данных нет информации о приросте просмотров"
+                
+                except Exception as e:
+                    logger.error(f"Ошибка при получении даты: {e}")
+                    return "❌ Не удалось определить дату для анализа"
+    
+            growth = self.query_manager.get_total_views_growth_on_date(target_date)
+    
+            if growth == 0:
+                return f"📊 За {target_date} не было зафиксировано прироста просмотров"
+    
+            return f"📈 Суммарный прирост просмотров за {target_date}: <b>{growth:,}</b>"
+        
+        elif parsed_query.intent == "unique_growth":
+            target_date = parsed_query.parameters.get("date")
+            if not target_date:
+                return "❌ Не указана дата. Пример: 'Сколько видео получали просмотры вчера?'"
+            
+            count = self.query_manager.get_unique_videos_with_growth_on_date(target_date)
+            return f"🆕 Видео, получавшие новые просмотры {target_date}: <b>{count:,}</b>"
+        
+        else:
+            # Для unknown запросов даем подсказки
+            suggestions = ""
+            if "автор" in parsed_query.original_query.lower() or "креатор" in parsed_query.original_query.lower():
+                suggestions = "Укажите ID креатора, например: 'Сколько видео у креатора с id abc123'"
+            elif "просмотры" in parsed_query.original_query.lower():
+                suggestions = "Уточните запрос, например: 'Прирост просмотров за вчера' или 'Видео с более 10000 просмотров'"
+            return (
+                "🤔 Не удалось распознать запрос.\n\n"
+                "Попробуйте один из примеров:\n"
+                "• Сколько всего видео?\n"
+                "• Видео креатора id 123\n"
+                "• Видео с >50000 просмотров\n"
+                "• Прирост просмотров за вчера"
+            )
+    
+    async def run(self):
+        """Асинхронный запуск бота."""
+        try:
+            logger.info("Запускаем бота...")
+            await self.dp.start_polling(self.bot)
+        except Exception as e:
+            logger.error(f"Ошибка при запуске бота: {e}")
+            raise
+        finally:
+            await self.bot.session.close()
