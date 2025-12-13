@@ -15,7 +15,7 @@ def run_tests():
         ("Прирост за сегодня", "total_growth"),
         ("Сколько разных видео получали просмотры вчера", "unique_growth"),
         ("Видео с >100000 просмотров", "videos_by_views"),
-        ("Ролики автора с id 123", "videos_by_creator"),
+        ("Ролики автора с id aca1061a9d324ecf8c3fa2bb32d7be63", "videos_by_creator"),
         ("Общий прирост просмотров", "total_growth"),
         ("Уникальные ролики с просмотрами", "unique_growth"),
         ("Разные видео получали просмотры сегодня", "unique_growth"),
@@ -24,7 +24,7 @@ def run_tests():
         ("Видео с просмотрами больше 1000", "videos_by_views"),
         ("Новые просмотры за неделю", "total_growth"),  # Исправлено: должно быть total_growth
         ("Сколько всего роликов", "total_videos"),
-        ("Креатор с id abc123", "videos_by_creator"),
+        ("Креатор с id aca1061a9d324ecf8c3fa2bb32d7be63", "videos_by_creator"),
         ("Уникальные видео", "unique_growth"),
         ("Прирост", "total_growth"),
     ]

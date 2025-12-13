@@ -168,6 +168,16 @@ class VideoStatsBot:
             count = self.query_manager.get_unique_videos_with_growth_on_date(target_date)
             return f"🆕 Видео, получавшие новые просмотры {target_date}: <b>{count:,}</b>"
         
+        elif parsed_query.intent == "videos_by_creator_with_views":
+            creator_id = parsed_query.parameters.get("creator_id")
+            min_views = parsed_query.parameters.get("min_views", 10000)
+    
+            if not creator_id:
+                return "❌ Не указан ID креатора. Пример: 'Сколько видео у креатора с id abc123 набрало больше 10000 просмотров?'"
+    
+            count = self.query_manager.get_videos_by_creator_with_views(creator_id, min_views)
+            return f"🎬 Видео у креатора {creator_id} с более чем {min_views:,} просмотров: <b>{count:,}</b>"
+        
         else:
             # Для unknown запросов даем подсказки
             suggestions = ""

@@ -25,7 +25,17 @@ class NLPProcessor:
         query_lower = query.lower().strip()
         
         # ПРИОРИТЕТ 1: Точные совпадения по паттернам
-        # 1. Сколько всего видео есть в системе?
+
+        # 1. Сколько видео у креатора с id X набрали больше Y просмотров?
+        combined_match = self._match_creator_with_views(query_lower)
+        if combined_match:
+            return ParsedQuery(
+                intent="videos_by_creator_with_views",
+                parameters=combined_match,
+                original_query=query
+            )
+
+        # 2. Сколько всего видео есть в системе?
         if self._match_total_videos(query_lower):
             return ParsedQuery(
                 intent="total_videos",
@@ -33,7 +43,7 @@ class NLPProcessor:
                 original_query=query
             )
         
-        # 2. Сколько видео у креатора с id ... вышло с ... по ...?
+        # 3. Сколько видео у креатора с id ... вышло с ... по ...?
         creator_match = self._match_creator_videos(query_lower)
         if creator_match:
             return ParsedQuery(
@@ -42,7 +52,7 @@ class NLPProcessor:
                 original_query=query
             )
         
-        # 3. Сколько видео набрало больше X просмотров?
+        # 4. Сколько видео набрало больше X просмотров?
         views_match = self._match_videos_by_views(query_lower)
         if views_match:
             return ParsedQuery(
@@ -51,7 +61,7 @@ class NLPProcessor:
                 original_query=query
             )
         
-        # 4. На сколько просмотров в сумме выросли все видео X?
+        # 5. На сколько просмотров в сумме выросли все видео X?
         growth_match = self._match_total_growth(query_lower)
         if growth_match:
             return ParsedQuery(
@@ -60,7 +70,7 @@ class NLPProcessor:
                 original_query=query
             )
         
-        # 5. Сколько разных видео получали новые просмотры X?
+        # 6. Сколько разных видео получали новые просмотры X?
         unique_match = self._match_unique_videos_growth(query_lower)
         if unique_match:
             return ParsedQuery(
@@ -72,6 +82,49 @@ class NLPProcessor:
         # ПРИОРИТЕТ 2: Расширенный анализ по ключевым словам
         return self._advanced_analysis(query_lower, query)
     
+    def _match_creator_with_views(self, query: str) -> Optional[Dict[str, Any]]:
+        """Сколько видео у креатора с id X набрали больше Y просмотров?"""
+        query_lower = query.lower()
+    
+        # 1. Ищем ID (32 hex символа)
+        id_match = re.search(r'id\s+([a-f0-9]{32})', query_lower, re.IGNORECASE)
+        if not id_match:
+            return None
+    
+        creator_id = id_match.group(1)
+    
+        # 2. Удаляем ВЕСЬ ID из запроса (не только сам ID, но и "id ")
+        query_without_id_full = re.sub(r'id\s+' + re.escape(creator_id), '', query_lower, flags=re.IGNORECASE)
+    
+        # 3. Проверяем что запрос содержит слова про просмотры
+        has_views_keywords = any(word in query_without_id_full for word in ['просмотров', 'просмотры', 'набрали', 'набрало'])
+        has_comparison = any(word in query_without_id_full for word in ['больше', 'более', 'свыше', '>'])
+    
+        # Если нет ключевых слов про просмотры/сравнение, это не наш запрос
+        if not (has_views_keywords and has_comparison):
+            return None
+    
+        # 4. Ищем число просмотров (убираем пробелы в числах)
+        # Заменяем "10 000" на "10000" во всем запросе
+        query_clean = re.sub(r'(\d)\s+(\d)', r'\1\2', query_without_id_full)
+    
+        # Ищем числа после индикаторов
+        indicators = ['больше', 'более', 'свыше', '>', 'набрали', 'набрало']
+    
+        for indicator in indicators:
+            pattern = rf'{indicator}\s*(\d+)'
+            match = re.search(pattern, query_clean)
+            if match:
+                min_views = int(match.group(1))
+                # Проверяем что это разумное число просмотров (не 1061 из ID)
+                if min_views >= 1000:  # Минимум 1000 просмотров
+                    return {
+                        "creator_id": creator_id,
+                    "   min_views": min_views
+                    }
+    
+        return None
+
     def _match_total_videos(self, query: str) -> bool:
         """Сколько всего видео есть в системе?"""
         patterns = [
@@ -89,8 +142,17 @@ class NLPProcessor:
         return any(re.search(pattern, query) for pattern in patterns)
     
     def _match_creator_videos(self, query: str) -> Optional[Dict[str, Any]]:
-        """Сколько видео у креатора с id ... вышло с ... по ...?"""
-        # Сначала ищем конкретные паттерны с ID
+        """Сколько видео у креатора с id ... вышло с ... по ...(без условий про просмотры)?"""
+        # Сначала проверяем что это НЕ запрос с условием по просмотрам
+        query_lower = query.lower()
+    
+        # Если есть слова про просмотры и сравнение, это не простой запрос
+        has_views = any(word in query_lower for word in ['просмотров', 'просмотры', 'набрали', 'набрало'])
+        has_comparison = any(word in query_lower for word in ['больше', 'более', 'свыше', '>'])
+    
+        if has_views and has_comparison:
+            return None
+        # Ищем конкретные паттерны с ID
         id_patterns = [
             r'креатора\s+(?:с\s+)?id\s+([a-f0-9]{32}|[a-f0-9-]{36}|\w+)',
             r'автора\s+(?:с\s+)?id\s+([a-f0-9]{32}|[a-f0-9-]{36}|\w+)',
@@ -325,6 +387,11 @@ class NLPProcessor:
                 "уникальн": 5, "разных": 5, "разные": 5, "новые": 1,
                 "получали": 3, "получало": 3, "отдельных": 2, "различных": 2,
                 "какие": 3
+            },
+            "videos_by_creator_with_views": {
+                "креатор": 2, "автор": 2, "id": 3, "у": 1,
+                "просмотров": 3, "больше": 2, "набрали": 2, "набрало": 2,
+                "просмотрами": 2, "итоговой": 1, "статистике": 1
             }
         }
         
@@ -338,6 +405,13 @@ class NLPProcessor:
         
         # Специальные правила для проблемных случаев
         
+        # Специальные правила для комбинированных запросов
+        if 'креатора' in query_lower and 'просмотров' in query_lower:
+            # Проверяем есть ли условия с "больше" или числа
+            if 'больше' in query_lower or any(word.isdigit() for word in query_lower.split()):
+                scores["videos_by_creator_with_views"] += 5
+                scores["videos_by_creator"] = max(0, scores["videos_by_creator"] - 2)
+
         # 1. "Сколько видео у автора" - без ID должно быть unknown
         if 'сколько видео' in query_lower and 'у автора' in query_lower:
             # Проверяем есть ли ID
@@ -370,7 +444,7 @@ class NLPProcessor:
         best_score = scores[best_intent]
         
         # Если лучший score слишком низкий, считаем unknown
-        if best_score < 2 or (best_intent == "videos_by_creator" and best_score < 3):
+        if best_score < 2:
             return ParsedQuery(
                 intent="unknown",
                 parameters={"query": original_query},
@@ -380,7 +454,22 @@ class NLPProcessor:
         # Извлекаем параметры
         params = {}
         
-        if best_intent == "videos_by_creator":
+        if best_intent == "videos_by_creator_with_views":
+            # Ищем ID креатора
+            id_match = re.search(r'[a-f0-9]{32}|[a-f0-9-]{36}|\bid\s+([^\s]+)', query_lower)
+            if id_match:
+                creator_id = id_match.group(1) if id_match.groups() else id_match.group(0)
+                if creator_id.lower() not in ['креатора', 'автора', 'креатор', 'автор', 'id']:
+                    params["creator_id"] = creator_id
+            
+            # Ищем количество просмотров
+            numbers = re.findall(r'\d+', query_lower.replace(' ', '').replace(',', ''))
+            if numbers:
+                params["min_views"] = int(numbers[-1])
+            else:
+                params["min_views"] = 10000
+
+        elif best_intent == "videos_by_creator":
             # Ищем ID (UUID или хэш или любой ID)
             id_match = re.search(r'[a-f0-9]{32}|[a-f0-9-]{36}|\bid\s+(\w+)', query_lower)
             if id_match:

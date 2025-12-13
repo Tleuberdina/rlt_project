@@ -103,6 +103,23 @@ class QueryManager:
                 return result[0] if result else 0
         finally:
             conn.close()
+
+    def get_videos_by_creator_with_views(self, creator_id: str, min_views: int) -> int:
+        """Сколько видео у креатора набрало больше X просмотров"""
+        conn = self._get_connection()
+        try:
+            query = """
+                SELECT COUNT(*) 
+                FROM videos 
+                WHERE creator_id = %s AND views_count > %s
+            """
+        
+            with conn.cursor() as cursor:
+                cursor.execute(query, (creator_id, min_views))
+                result = cursor.fetchone()
+                return result[0] if result else 0
+        finally:
+            conn.close()
     
     def execute_custom_query(self, sql: str, params: tuple = None) -> Optional[int]:
         """Выполнение произвольного SQL запроса."""
