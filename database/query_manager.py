@@ -27,22 +27,28 @@ class QueryManager:
             conn.close()
     
     def get_videos_by_creator(self, creator_id: str, 
-                            start_date: Optional[date] = None,
-                            end_date: Optional[date] = None) -> int:
-        """Сколько видео у креатора за период."""
+                         start_date: Optional[date] = None,
+                         end_date: Optional[date] = None) -> int:
+        """Сколько видео у креатора за период (по дате публикации видео)."""
         conn = self._get_connection()
         try:
             query = "SELECT COUNT(*) FROM videos WHERE creator_id = %s"
             params = [creator_id]
-            
+        
             if start_date:
-                query += " AND video_created_at >= %s"
-                params.append(datetime.combine(start_date, datetime.min.time()))
-            
+                # Используем DATE() для сравнения только дат (включительно)
+                query += " AND DATE(video_created_at) >= %s"
+                params.append(start_date)
+        
             if end_date:
-                query += " AND video_created_at <= %s"
-                params.append(datetime.combine(end_date, datetime.max.time()))
-            
+                # Используем DATE() для сравнения только дат (включительно)
+                query += " AND DATE(video_created_at) <= %s"
+                params.append(end_date)
+        
+            # ДЛЯ ОТЛАДКИ: выведем запрос
+            print(f"🔍 SQL запрос: {query}")
+            print(f"🔍 Параметры: {params}")
+        
             with conn.cursor() as cursor:
                 cursor.execute(query, params)
                 result = cursor.fetchone()

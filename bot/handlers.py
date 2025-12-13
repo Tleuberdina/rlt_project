@@ -107,6 +107,9 @@ class VideoStatsBot:
             creator_id = parsed_query.parameters.get("creator_id")
             start_date = parsed_query.parameters.get("start_date")
             end_date = parsed_query.parameters.get("end_date")
+            logger.info(f"🔍 Поиск видео для creator_id={creator_id}")
+            logger.info(f"📅 start_date={start_date}, end_date={end_date}")
+            logger.info(f"📅 Тип start_date={type(start_date)}, тип end_date={type(end_date)}")
             
             if not creator_id:
                 return "❌ Не указан ID креатора. Пример: 'Сколько видео у креатора с id user123?'"
@@ -114,7 +117,32 @@ class VideoStatsBot:
             count = self.query_manager.get_videos_by_creator(
                 creator_id, start_date, end_date
             )
-            
+            try:
+                conn = self.query_manager._get_connection()
+                cursor = conn.cursor()
+        
+                # Выполняем тот же запрос что и в get_videos_by_creator
+                query = "SELECT id, video_created_at FROM videos WHERE creator_id = %s"
+                params = [creator_id]
+        
+                if start_date:
+                    query += " AND DATE(video_created_at) >= %s"
+                    params.append(start_date)
+        
+                if end_date:
+                    query += " AND DATE(video_created_at) <= %s"
+                    params.append(end_date)
+        
+                cursor.execute(query, params)
+                videos = cursor.fetchall()
+        
+                logger.info(f"📊 Найдено видео: {videos}")
+                logger.info(f"📊 Всего записей: {len(videos)}")
+        
+                cursor.close()
+                conn.close()
+            except Exception as e:
+                logger.error(f"Ошибка при проверке запроса: {e}")
             date_info = ""
             if start_date and end_date:
                 date_info = f" за период с {start_date} по {end_date}"

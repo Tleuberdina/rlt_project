@@ -154,14 +154,16 @@ class NLPProcessor:
             return None
         # Ищем конкретные паттерны с ID
         id_patterns = [
-            r'креатора\s+(?:с\s+)?id\s+([a-f0-9]{32}|[a-f0-9-]{36}|\w+)',
-            r'автора\s+(?:с\s+)?id\s+([a-f0-9]{32}|[a-f0-9-]{36}|\w+)',
-            r'id\s+([a-f0-9]{32}|[a-f0-9-]{36}|\w+)\s+креатора',
-            r'id\s+([a-f0-9]{32}|[a-f0-9-]{36}|\w+)\s+автора',
-            r'у\s+креатора\s+([a-f0-9]{32}|[a-f0-9-]{36}|\w+)',
-            r'у\s+автора\s+([a-f0-9]{32}|[a-f0-9-]{36}|\w+)',
-            r'креатор\s+([a-f0-9]{32}|[a-f0-9-]{36}|\w+)',
-            r'автор\s+([a-f0-9]{32}|[a-f0-9-]{36}|\w+)'
+            r'креатор(?:а|ом)?\s+(?:с\s+)?id\s+([a-f0-9]{32})',
+            r'автор(?:а|ом)?\s+(?:с\s+)?id\s+([a-f0-9]{32})',
+            r'id\s+([a-f0-9]{32})\s+креатор',
+            r'id\s+([a-f0-9]{32})\s+автор',
+            r'у\s+креатор(?:а|а\s+с\s+id)?\s+([a-f0-9]{32})',
+            r'у\s+автор(?:а|а\s+с\s+id)?\s+([a-f0-9]{32})',
+            r'креатор\s+([a-f0-9]{32})',
+            r'автор\s+([a-f0-9]{32})',
+            r'креатор\s+с\s+id\s+([a-f0-9]{32})',
+            r'автор\s+с\s+id\s+([a-f0-9]{32})'
         ]
         
         creator_id = None
@@ -169,6 +171,7 @@ class NLPProcessor:
             match = re.search(pattern, query)
             if match:
                 creator_id = match.group(1)
+                print(f"🔍 Найден ID: {creator_id} по паттерну: {pattern}")  # Отладка
                 break
         
         # Если нашли ID, проверяем что это не общий запрос про видео
@@ -318,37 +321,61 @@ class NLPProcessor:
             month_ago = today - timedelta(days=30)
             return month_ago, today
         
-        # Паттерн для одиночной даты: "28 ноября 2025"
-        single_pattern = r'(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})'
+        # Паттерн 1: "с 1 ноября 2025 по 5 ноября 2025"
+        range_pattern_full = r'с\s+(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})\s+по\s+(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})'
+    
+        # Паттерн 2: "с 1 по 5 ноября 2025" (один месяц и год)
+        range_pattern_simple = r'с\s+(\d{1,2})\s+по\s+(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})'
+    
+        # Сначала пробуем полный паттерн
+        range_match_full = re.search(range_pattern_full, query)
+        if range_match_full:
+            day_start = int(range_match_full.group(1))
+            month_name_start = range_match_full.group(2)
+            year_start = int(range_match_full.group(3))
+            day_end = int(range_match_full.group(4))
+            month_name_end = range_match_full.group(5)
+            year_end = int(range_match_full.group(6))
         
-        # Паттерн для диапазона: "с 1 по 5 ноября 2025"
-        range_pattern = r'с\s+(\d{1,2})\s+по\s+(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})'
+            month_start = self.month_map[month_name_start]
+            month_end = self.month_map[month_name_end]
         
-        # Проверяем диапазон
-        range_match = re.search(range_pattern, query)
-        if range_match:
-            day_start = int(range_match.group(1))
-            day_end = int(range_match.group(2))
-            month_name = range_match.group(3)
-            year = int(range_match.group(4))
-            
+            start_date = date(year_start, month_start, day_start)
+            end_date = date(year_end, month_end, day_end)
+        
+            print(f"📅 Распарсен полный диапазон: {start_date} - {end_date}")
+            return start_date, end_date
+    
+        # Пробуем простой паттерн
+        range_match_simple = re.search(range_pattern_simple, query)
+        if range_match_simple:
+            day_start = int(range_match_simple.group(1))
+            day_end = int(range_match_simple.group(2))
+            month_name = range_match_simple.group(3)
+            year = int(range_match_simple.group(4))
+        
             month = self.month_map[month_name]
             start_date = date(year, month, day_start)
             end_date = date(year, month, day_end)
-            
-            return start_date, end_date
         
+            print(f"📅 Распарсен простой диапазон: {start_date} - {end_date}")
+            return start_date, end_date
+    
+        # Паттерн для одиночной даты: "28 ноября 2025"
+        single_pattern = r'(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})'
+    
         # Проверяем одиночную дату
         single_match = re.search(single_pattern, query)
         if single_match:
             day = int(single_match.group(1))
             month_name = single_match.group(2)
             year = int(single_match.group(3))
-            
+        
             month = self.month_map[month_name]
             d = date(year, month, day)
+            print(f"📅 Распарсена одиночная дата: {d}")
             return d, d
-        
+    
         # Пытаемся найти дату в формате ГГГГ-ММ-ДД
         iso_pattern = r'(\d{4})-(\d{1,2})-(\d{1,2})'
         iso_match = re.search(iso_pattern, query)
@@ -357,13 +384,15 @@ class NLPProcessor:
             month = int(iso_match.group(2))
             day = int(iso_match.group(3))
             d = date(year, month, day)
+            print(f"📅 Распарсена ISO дата: {d}")
             return d, d
-        
+    
+        print(f"📅 Не удалось распарсить даты из запроса: {query}")
         return None
     
     def _advanced_analysis(self, query_lower: str, original_query: str) -> ParsedQuery:
         """Расширенный анализ запроса с весами ключевых слов."""
-        
+        print(f"🔍 Расширенный анализ запроса: {query_lower}")
         # Веса для разных типов запросов (обновленные)
         keyword_weights = {
             "total_videos": {
@@ -469,23 +498,22 @@ class NLPProcessor:
             else:
                 params["min_views"] = 10000
 
-        elif best_intent == "videos_by_creator":
-            # Ищем ID (UUID или хэш или любой ID)
-            id_match = re.search(r'[a-f0-9]{32}|[a-f0-9-]{36}|\bid\s+(\w+)', query_lower)
+        if best_intent == "videos_by_creator":
+            # Ищем ID (32 hex символа) - ОБНОВЛЕННЫЙ ПАТТЕРН
+            id_match = re.search(r'[a-f0-9]{32}', query_lower)
             if id_match:
-                # Проверяем что это не просто слово "автор" или "креатор"
-                potential_id = id_match.group(1) if id_match.groups() else id_match.group(0)
-                if potential_id.lower() not in ['автора', 'креатора', 'автор', 'креатор', 'у']:
-                    params["creator_id"] = potential_id
+                creator_id = id_match.group(0)
+                print(f"🔍 Найден ID в расширенном анализе: {creator_id}")
+            
+                if len(creator_id) == 32:
+                    params["creator_id"] = creator_id
                 else:
-                    # Если нет реального ID, возвращаем unknown
                     return ParsedQuery(
                         intent="unknown",
                         parameters={"query": original_query},
                         original_query=original_query
                     )
             else:
-                # Если нет ID, возвращаем unknown
                 return ParsedQuery(
                     intent="unknown",
                     parameters={"query": original_query},
