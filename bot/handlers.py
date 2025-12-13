@@ -102,7 +102,11 @@ class VideoStatsBot:
         if parsed_query.intent == "total_videos":
             count = self.query_manager.get_total_videos()
             return f"{count:,}"
-        
+
+        elif parsed_query.intent == "negative_views_snapshots":
+            count = self.query_manager.get_negative_views_snapshots_count()
+            return f"{count:,}"
+    
         elif parsed_query.intent == "videos_by_creator":
             creator_id = parsed_query.parameters.get("creator_id")
             start_date = parsed_query.parameters.get("start_date")

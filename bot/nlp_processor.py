@@ -26,7 +26,15 @@ class NLPProcessor:
         
         # ПРИОРИТЕТ 1: Точные совпадения по паттернам
 
-        # 1. Сколько видео у креатора с id X набрали больше Y просмотров?
+        # 1. Сколько всего есть замеров статистики с отрицательными просмотрами
+        negative_views_match = self._match_negative_views(query_lower)
+        if negative_views_match:
+            return ParsedQuery(
+                intent="negative_views_snapshots",
+                parameters={},
+                original_query=query
+            )
+        # 2. Сколько видео у креатора с id X набрали больше Y просмотров?
         combined_match = self._match_creator_with_views(query_lower)
         if combined_match:
             return ParsedQuery(
@@ -35,7 +43,7 @@ class NLPProcessor:
                 original_query=query
             )
 
-        # 2. Сколько всего видео есть в системе?
+        # 3. Сколько всего видео есть в системе?
         if self._match_total_videos(query_lower):
             return ParsedQuery(
                 intent="total_videos",
@@ -43,7 +51,7 @@ class NLPProcessor:
                 original_query=query
             )
         
-        # 3. Сколько видео у креатора с id ... вышло с ... по ...?
+        # 4. Сколько видео у креатора с id ... вышло с ... по ...?
         creator_match = self._match_creator_videos(query_lower)
         if creator_match:
             return ParsedQuery(
@@ -52,7 +60,7 @@ class NLPProcessor:
                 original_query=query
             )
         
-        # 4. Сколько видео набрало больше X просмотров?
+        # 5. Сколько видео набрало больше X просмотров?
         views_match = self._match_videos_by_views(query_lower)
         if views_match:
             return ParsedQuery(
@@ -61,7 +69,7 @@ class NLPProcessor:
                 original_query=query
             )
         
-        # 5. На сколько просмотров в сумме выросли все видео X?
+        # 6. На сколько просмотров в сумме выросли все видео X?
         growth_match = self._match_total_growth(query_lower)
         if growth_match:
             return ParsedQuery(
@@ -70,7 +78,7 @@ class NLPProcessor:
                 original_query=query
             )
         
-        # 6. Сколько разных видео получали новые просмотры X?
+        # 7. Сколько разных видео получали новые просмотры X?
         unique_match = self._match_unique_videos_growth(query_lower)
         if unique_match:
             return ParsedQuery(
@@ -81,7 +89,47 @@ class NLPProcessor:
         
         # ПРИОРИТЕТ 2: Расширенный анализ по ключевым словам
         return self._advanced_analysis(query_lower, query)
+
+    def _match_negative_views(self, query: str) -> Optional[Dict[str, Any]]:
+        """Сколько всего есть замеров статистики с отрицательными просмотрами?"""
+        query_lower = query.lower()
     
+        # Ключевые слова для этого запроса
+        negative_keywords = [
+            'отрицательн',  # отрицательных, отрицательное
+            'уменьшилось',
+            'стало меньше',
+            'по сравнению с предыдущим',
+            'просмотров за час',
+            'замеров статистики',
+            'количество просмотров стало меньше'
+        ]
+    
+        # Проверяем наличие ключевых слов
+        has_negative = any(keyword in query_lower for keyword in negative_keywords)
+        has_snapshots = any(word in query_lower for word in ['замеров', 'замеры', 'снапшотов', 'статистик'])
+        has_views = any(word in query_lower for word in ['просмотров', 'просмотры'])
+    
+        # Конкретные паттерны
+        patterns = [
+            r'сколько всего есть замеров статистики.*отрицательн',
+            r'замеров.*отрицательн.*просмотров',
+            r'просмотров за час.*отрицательн',
+            r'количество просмотров стало меньше',
+            r'по сравнению с предыдущим.*меньше'
+        ]
+    
+        # Проверяем точные паттерны
+        for pattern in patterns:
+            if re.search(pattern, query_lower):
+                return {}
+    
+        # Проверяем комбинацию ключевых слов
+        if has_negative and has_snapshots and has_views:
+            return {}
+    
+        return None
+
     def _match_creator_with_views(self, query: str) -> Optional[Dict[str, Any]]:
         """Сколько видео у креатора с id X набрали больше Y просмотров?"""
         query_lower = query.lower()
@@ -416,6 +464,12 @@ class NLPProcessor:
                 "уникальн": 5, "разных": 5, "разные": 5, "новые": 1,
                 "получали": 3, "получало": 3, "отдельных": 2, "различных": 2,
                 "какие": 3
+            },
+            "negative_views_snapshots": {
+                "отрицательн": 5, "уменьшилось": 4, "меньше": 3,
+                "замеров": 4, "снапшотов": 4, "статистики": 3,
+                "просмотров": 3, "час": 2, "предыдущим": 3,
+                "по сравнению": 3
             },
             "videos_by_creator_with_views": {
                 "креатор": 2, "автор": 2, "id": 3, "у": 1,

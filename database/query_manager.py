@@ -55,7 +55,23 @@ class QueryManager:
                 return result[0] if result else 0
         finally:
             conn.close()
-    
+
+    def get_negative_views_snapshots_count(self) -> int:
+        """Сколько замеров статистики с отрицательными просмотрами."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                # Ищем снапшоты где delta_views_count < 0
+                cursor.execute("""
+                    SELECT COUNT(*) 
+                    FROM video_snapshots 
+                    WHERE delta_views_count < 0
+                """)
+                result = cursor.fetchone()
+                return result[0] if result else 0
+        finally:
+            conn.close()
+
     def get_videos_with_views_above(self, min_views: int) -> int:
         """Сколько видео набрало больше X просмотров."""
         conn = self._get_connection()
