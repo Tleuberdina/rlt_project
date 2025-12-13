@@ -104,7 +104,7 @@ class VideoStatsBot:
         else:
             period_text = f"с {start_date} по {end_date}"
     
-        return f"{total_views:,}"
+        return f"{total_views}"
 
     async def start_handler(self, message: types.Message):
         """Обработчик команды /start."""
