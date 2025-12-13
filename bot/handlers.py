@@ -101,7 +101,7 @@ class VideoStatsBot:
         
         if parsed_query.intent == "total_videos":
             count = self.query_manager.get_total_videos()
-            return f"📊 Всего видео в системе: <b>{count:,}</b>"
+            return f"{count:,}"
         
         elif parsed_query.intent == "videos_by_creator":
             creator_id = parsed_query.parameters.get("creator_id")
@@ -123,12 +123,12 @@ class VideoStatsBot:
             elif end_date:
                 date_info = f" до {end_date}"
             
-            return f"🎬 Видео у креатора {creator_id}{date_info}: <b>{count:,}</b>"
+            return f"{count:,}"
         
         elif parsed_query.intent == "videos_by_views":
             min_views = parsed_query.parameters.get("min_views", 100000)
             count = self.query_manager.get_videos_with_views_above(min_views)
-            return f"👁️ Видео с более чем {min_views:,} просмотров: <b>{count:,}</b>"
+            return f"{count:,}"
         
         elif parsed_query.intent == "total_growth":
             target_date = parsed_query.parameters.get("date")
@@ -158,7 +158,7 @@ class VideoStatsBot:
             if growth == 0:
                 return f"📊 За {target_date} не было зафиксировано прироста просмотров"
     
-            return f"📈 Суммарный прирост просмотров за {target_date}: <b>{growth:,}</b>"
+            return f"{growth:,}"
         
         elif parsed_query.intent == "unique_growth":
             target_date = parsed_query.parameters.get("date")
@@ -166,7 +166,7 @@ class VideoStatsBot:
                 return "❌ Не указана дата. Пример: 'Сколько видео получали просмотры вчера?'"
             
             count = self.query_manager.get_unique_videos_with_growth_on_date(target_date)
-            return f"🆕 Видео, получавшие новые просмотры {target_date}: <b>{count:,}</b>"
+            return f"{count:,}"
         
         elif parsed_query.intent == "videos_by_creator_with_views":
             creator_id = parsed_query.parameters.get("creator_id")
@@ -176,7 +176,7 @@ class VideoStatsBot:
                 return "❌ Не указан ID креатора. Пример: 'Сколько видео у креатора с id abc123 набрало больше 10000 просмотров?'"
     
             count = self.query_manager.get_videos_by_creator_with_views(creator_id, min_views)
-            return f"🎬 Видео у креатора {creator_id} с более чем {min_views:,} просмотров: <b>{count:,}</b>"
+            return f"{count:,}"
         
         else:
             # Для unknown запросов даем подсказки
