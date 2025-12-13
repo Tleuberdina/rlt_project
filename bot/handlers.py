@@ -1,5 +1,9 @@
 import logging
 import asyncio
+import re
+from datetime import date
+from typing import Optional, Tuple
+import calendar
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
@@ -30,6 +34,78 @@ class VideoStatsBot:
         self.dp.message.register(self.help_handler, Command(commands=["help"]))
         self.dp.message.register(self.message_handler)
     
+    def _extract_month_year_from_text(self, text: str) -> Optional[Tuple[date, date]]:
+        """Извлечение месяца и года из текста запроса."""
+        #import re
+        #import calendar
+        #from datetime import date
+        #from typing import Optional, Tuple
+    
+        text_lower = text.lower()
+    
+        # Месяцы на русском
+        month_map = {
+            'января': 1, 'февраля': 2, 'марта': 3, 'апреля': 4,
+            'мая': 5, 'июня': 6, 'июля': 7, 'августа': 8,
+            'сентября': 9, 'октября': 10, 'ноября': 11, 'декабря': 12,
+            'январе': 1, 'феврале': 2, 'марте': 3, 'апреле': 4,
+            'мае': 5, 'июне': 6, 'июле': 7, 'августе': 8,
+            'сентябре': 9, 'октябре': 10, 'ноябре': 11, 'декабре': 12
+        }
+    
+        # Ищем любой месяц и год
+        for month_name, month_num in month_map.items():
+            # Паттерны: "в июне 2025", "за июль 2024", "июня 2025 года"
+            patterns = [
+                rf'в\s+{month_name}\s+(\d{{4}})',
+                rf'за\s+{month_name}\s+(\d{{4}})',
+                rf'{month_name}\s+(\d{{4}})\s+года',
+                rf'{month_name}\s+(\d{{4}})',
+            ]
+        
+            for pattern in patterns:
+                match = re.search(pattern, text_lower)
+                if match:
+                    try:
+                        year = int(match.group(1))
+                        last_day = calendar.monthrange(year, month_num)[1]
+                    
+                        start_date = date(year, month_num, 1)
+                        end_date = date(year, month_num, last_day)
+                    
+                        logger.info(f"📅 Извлечен {month_name} {year}: {start_date} - {end_date}")
+                        return start_date, end_date
+                    except Exception as e:
+                        logger.error(f"Ошибка извлечения даты: {e}")
+                        continue
+    
+        return None
+
+    def _format_total_views_response(self, start_date: date, end_date: date, total_views: int) -> str:
+        """Форматирование ответа для суммарных просмотров."""
+        # Месяцы на русском в предложном падеже
+        month_names = {
+            1: 'январе', 2: 'феврале', 3: 'марте', 4: 'апреле',
+            5: 'мае', 6: 'июне', 7: 'июле', 8: 'августе',
+            9: 'сентябре', 10: 'октябре', 11: 'ноябре', 12: 'декабре'
+        }
+    
+        if start_date.month == end_date.month and start_date.year == end_date.year:
+            # Весь месяц
+            month_name = month_names[start_date.month]
+            period_text = f"в {month_name} {start_date.year} года"
+        elif start_date.day == 1 and end_date.day in [28, 29, 30, 31]:
+            # Вероятно, весь месяц
+            if start_date.month == end_date.month:
+                month_name = month_names[start_date.month]
+                period_text = f"в {month_name} {start_date.year} года"
+            else:
+                period_text = f"с {start_date} по {end_date}"
+        else:
+            period_text = f"с {start_date} по {end_date}"
+    
+        return f"{total_views:,}"
+
     async def start_handler(self, message: types.Message):
         """Обработчик команды /start."""
         welcome_text = """
@@ -102,6 +178,37 @@ class VideoStatsBot:
         if parsed_query.intent == "total_videos":
             count = self.query_manager.get_total_videos()
             return f"{count:,}"
+
+        elif parsed_query.intent == "total_views_period":
+            start_date = parsed_query.parameters.get("start_date")
+            end_date = parsed_query.parameters.get("end_date")
+        
+            logger.info(f"📊 Суммарные просмотры за период: start_date={start_date}, end_date={end_date}")
+        
+            if not start_date or not end_date:
+                # Пробуем извлечь даты из оригинального запроса более универсально
+                logger.info(f"⚠️ Даты не найдены в параметрах, парсим из запроса...")
+            
+                # Используем NLP процессор для парсинга даты из запроса
+                dates = self.nlp._parse_dates_from_query(parsed_query.original_query)
+            
+                if dates:
+                    start_date, end_date = dates
+                    logger.info(f"📅 Найдены даты в запросе: {start_date} - {end_date}")
+                else:
+                    # Пробуем найти месяц и год в тексте
+                    month_year = self._extract_month_year_from_text(parsed_query.original_query)
+                    if month_year:
+                        start_date, end_date = month_year
+                        logger.info(f"📅 Найден месяц и год: {start_date} - {end_date}")
+                    else:
+                        return "❌ Не указан период. Пример: 'Суммарные просмотры за июнь 2025' или 'Сколько просмотров набрали все видео в марте 2024'"
+        
+            total_views = self.query_manager.get_total_views_for_period(start_date, end_date)
+        
+            # Форматируем красивый ответ
+            response = self._format_total_views_response(start_date, end_date, total_views)
+            return response
 
         elif parsed_query.intent == "negative_views_snapshots":
             count = self.query_manager.get_negative_views_snapshots_count()

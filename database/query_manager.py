@@ -56,6 +56,23 @@ class QueryManager:
         finally:
             conn.close()
 
+    def get_total_views_for_period(self, start_date: date, end_date: date) -> int:
+        """Суммарное количество просмотров всех видео за период."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT COALESCE(SUM(views_count), 0)
+                    FROM videos 
+                    WHERE DATE(video_created_at) >= %s 
+                    AND DATE(video_created_at) <= %s
+                """, [start_date, end_date])
+            
+                result = cursor.fetchone()
+                return int(result[0]) if result else 0
+        finally:
+            conn.close()
+
     def get_negative_views_snapshots_count(self) -> int:
         """Сколько замеров статистики с отрицательными просмотрами."""
         conn = self._get_connection()
