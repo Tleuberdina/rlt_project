@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, time, timedelta
 import calendar
 from typing import Tuple, Optional, Dict, Any
 from dataclasses import dataclass
@@ -11,6 +11,11 @@ class ParsedQuery:
     parameters: Dict[str, Any]
     original_query: str
 
+    def get(self, key: str, default=None):
+        """Получить параметр по ключу."""
+        return self.parameters.get(key, default)
+
+
 class NLPProcessor:
     """Процессор естественного языка без LLM."""
     
@@ -20,12 +25,63 @@ class NLPProcessor:
             'мая': 5, 'июня': 6, 'июля': 7, 'августа': 8,
             'сентября': 9, 'октября': 10, 'ноября': 11, 'декабря': 12
         }
-    
+
+    def _parse_time_from_query(self, query: str) -> Optional[Tuple[time, time]]:
+        """Парсинг временного интервала из запроса."""
+        # Паттерны для времени:
+        # "с 10:00 до 15:00"
+        # "с 10 до 15 часов"
+        # "с 10 утра до 15 дня"
+        # "между 10:00 и 15:00"
+        
+        query_lower = query.lower()
+        
+        # 1. Паттерн с двоеточием: "с 10:00 до 15:00"
+        time_pattern_colon = r'с\s+(\d{1,2}:\d{2})\s+до\s+(\d{1,2}:\d{2})'
+        match = re.search(time_pattern_colon, query_lower)
+        if match:
+            try:
+                start_time = datetime.strptime(match.group(1), '%H:%M').time()
+                end_time = datetime.strptime(match.group(2), '%H:%M').time()
+                return start_time, end_time
+            except ValueError:
+                pass
+        
+        # 2. Паттерн без двоеточия: "с 10 до 15 часов"
+        time_pattern_hours = r'с\s+(\d{1,2})\s+(?:до|по)\s+(\d{1,2})\s*(?:часов|ч\.?)'
+        match = re.search(time_pattern_hours, query_lower)
+        if match:
+            try:
+                start_hour = int(match.group(1))
+                end_hour = int(match.group(2))
+                start_time = time(start_hour, 0)
+                end_time = time(end_hour, 0)
+                return start_time, end_time
+            except ValueError:
+                pass
+        
+        # 3. Простой паттерн: "с 10 до 15"
+        time_pattern_simple = r'с\s+(\d{1,2})\s+(?:до|по)\s+(\d{1,2})'
+        match = re.search(time_pattern_simple, query_lower)
+        if match:
+            try:
+                start_hour = int(match.group(1))
+                end_hour = int(match.group(2))
+                start_time = time(start_hour, 0)
+                end_time = time(end_hour, 0)
+                return start_time, end_time
+            except ValueError:
+                pass
+        
+        return None
+
     def parse_query(self, query: str) -> ParsedQuery:
         """Основной метод парсинга запроса."""
         query_lower = query.lower().strip()
         
-        # ПРИОРИТЕТ 1: Точные совпадения по паттернам
+        # ПРИОРИТЕТ 1: Новый запрос с временным интервалом
+        if self._match_total_views_with_time_period(query_lower):
+            return self._parse_total_views_with_time_period(query_lower, query)
 
         # 1. Суммарные просмотры за период
         total_views_period_match = self._match_total_views_period(query_lower)
@@ -98,6 +154,57 @@ class NLPProcessor:
         
         # ПРИОРИТЕТ 2: Расширенный анализ по ключевым словам
         return self._advanced_analysis(query_lower, query)
+
+    def _match_total_views_with_time_period(self, query: str) -> bool:
+        """Определяет, является ли запрос о суммарном росте просмотров с временным интервалом."""
+        keywords = {
+            'просмотров суммарно выросли',
+            'суммарно выросли все видео',
+            'сложить изменения просмотров',
+            'изменения просмотров между замерами',
+            'замерами попадающими в этот интервал'
+        }
+        
+        # Проверяем наличие ключевых слов
+        has_keywords = any(keyword in query for keyword in keywords)
+        
+        # Проверяем наличие временного интервала
+        has_time_period = bool(self._parse_time_from_query(query))
+        
+        # Проверяем наличие ID креатора
+        has_creator_id = bool(re.search(r'id\s+([a-f0-9]{32}|[a-f0-9-]{36}|\w+)', query, re.IGNORECASE))
+        
+        # Проверяем наличие даты
+        has_date = bool(self._parse_dates_from_query(query))
+        
+        return has_keywords and has_time_period and has_creator_id and has_date
+    
+    def _parse_total_views_with_time_period(self, query: str, original_query: str) -> ParsedQuery:
+        """Парсинг запроса о суммарном росте просмотров с временным интервалом."""
+        params = {}
+        
+        # 1. Ищем ID креатора
+        id_match = re.search(r'id\s+([a-f0-9]{32}|[a-f0-9-]{36}|\w+)', query, re.IGNORECASE)
+        if id_match:
+            params["creator_id"] = id_match.group(1)
+        
+        # 2. Парсим даты
+        dates = self._parse_dates_from_query(query)
+        if dates:
+            params["start_date"] = dates[0]
+            params["end_date"] = dates[1] if len(dates) > 1 else dates[0]
+        
+        # 3. Парсим временной интервал
+        time_period = self._parse_time_from_query(query)
+        if time_period:
+            params["start_time"] = time_period[0]
+            params["end_time"] = time_period[1]
+        
+        return ParsedQuery(
+            intent="total_views_period",
+            parameters=params,
+            original_query=original_query
+        )
 
     def _match_total_views_period(self, query: str) -> Optional[Dict[str, Any]]:
         """Какое суммарное количество просмотров набрали все видео за период."""

@@ -1,5 +1,5 @@
 import psycopg2
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Optional, Tuple
 import os
 from config.config import Config
@@ -53,6 +53,58 @@ class QueryManager:
                 cursor.execute(query, params)
                 result = cursor.fetchone()
                 return result[0] if result else 0
+        finally:
+            conn.close()
+
+    def get_total_views_growth_for_creator_with_time_period(self, creator_id: str, 
+                                                       target_date: date,
+                                                       start_time: time,
+                                                       end_time: time) -> int:
+        """На сколько просмотров суммарно выросли все видео креатора в указанный временной интервал."""
+        conn = self._get_connection()
+        try:
+            # Создаем полные datetime объекты
+            start_datetime = datetime.combine(target_date, start_time)
+            end_datetime = datetime.combine(target_date, end_time)
+        
+            print(f"DEBUG: Запрос для креатора {creator_id}")
+            print(f"DEBUG: Период: {start_datetime} - {end_datetime}")
+        
+            query = """
+                SELECT COALESCE(SUM(vs.delta_views_count), 0)
+                FROM video_snapshots vs
+                JOIN videos v ON vs.video_id = v.id
+                WHERE v.creator_id = %s
+                AND vs.created_at >= %s
+                AND vs.created_at <= %s
+                AND vs.delta_views_count > 0
+            """
+        
+            with conn.cursor() as cursor:
+                cursor.execute(query, (creator_id, start_datetime, end_datetime))
+                result = cursor.fetchone()
+                total_growth = int(result[0]) if result else 0
+            
+                # Дополнительная диагностика
+                cursor.execute("""
+                    SELECT vs.video_id, vs.created_at, vs.delta_views_count
+                    FROM video_snapshots vs
+                    JOIN videos v ON vs.video_id = v.id
+                    WHERE v.creator_id = %s
+                    AND vs.created_at >= %s
+                    AND vs.created_at <= %s
+                    AND vs.delta_views_count > 0
+                    ORDER BY vs.created_at
+                """, (creator_id, start_datetime, end_datetime))
+            
+                snapshots = cursor.fetchall()
+                print(f"DEBUG: Найдено {len(snapshots)} снапшотов с ростом просмотров")
+                for video_id, created_at, delta in snapshots:
+                    print(f"  - {video_id}: {created_at} (+{delta})")
+            
+                print(f"DEBUG: Итоговый суммарный рост: {total_growth}")
+            
+                return total_growth
         finally:
             conn.close()
 

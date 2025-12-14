@@ -1,7 +1,7 @@
 import logging
 import asyncio
 import re
-from datetime import date
+from datetime import date, time, timedelta
 from typing import Optional, Tuple
 import calendar
 from aiogram import Bot, Dispatcher, types
@@ -157,6 +157,11 @@ class VideoStatsBot:
             logger.info(f"🎯 Распознан интент: {parsed_query.intent}")
             logger.info(f"📊 Параметры: {parsed_query.parameters}")
             
+            # Дополнительная отладка для запросов с временем
+            if parsed_query.intent == "total_views_period":
+                logger.info(f"⏰ Время: {parsed_query.get('start_time')} - {parsed_query.get('end_time')}")
+                logger.info(f"📅 Дата: {parsed_query.get('start_date')} - {parsed_query.get('end_date')}")
+    
             # Обрабатываем запрос
             response = await self._process_parsed_query(parsed_query)
             
@@ -165,7 +170,7 @@ class VideoStatsBot:
             logger.info(f"📤 Отправлен ответ: {response[:50]}...")
             
         except Exception as e:
-            logger.error(f"Ошибка обработки запроса: {e}")
+            logger.error(f"Ошибка обработки запроса: {e}", exc_info=True)
             error_msg = (
                 "❌ Произошла ошибка при обработке запроса.\n"
                 "Попробуйте переформулировать вопрос или проверьте корректность данных."
@@ -178,6 +183,48 @@ class VideoStatsBot:
         if parsed_query.intent == "total_videos":
             count = self.query_manager.get_total_videos()
             return f"{count:,}"
+
+        if parsed_query.intent == "total_views_period":
+            creator_id = parsed_query.get("creator_id")
+            start_date = parsed_query.get("start_date")
+            start_time = parsed_query.get("start_time")
+            end_time = parsed_query.get("end_time")
+        
+            if not creator_id:
+                return "❌ Не указан ID креатора."
+        
+            if not start_date:
+                return "❌ Не указана дата."
+        
+            if not start_time or not end_time:
+                return "❌ Не указан временной интервал."
+        
+            # Если указана конечная дата, используем ее, иначе используем начальную
+            end_date = parsed_query.get("end_date", start_date)
+        
+            growth = 0
+            # Если начальная и конечная даты одинаковые, считаем для одного дня
+            if start_date == end_date:
+                growth = self.query_manager.get_total_views_growth_for_creator_with_time_period(
+                    creator_id, start_date, start_time, end_time
+                )
+            else:
+                # Для диапазона дней считаем для каждого дня отдельно
+                current_date = start_date
+                while current_date <= end_date:
+                    daily_growth = self.query_manager.get_total_views_growth_for_creator_with_time_period(
+                        creator_id, current_date, start_time, end_time
+                    )
+                    growth += daily_growth
+                    current_date += timedelta(days=1)
+        
+            time_period_str = f"с {start_time.strftime('%H:%M')} до {end_time.strftime('%H:%M')}"
+            if start_date == end_date:
+                date_str = start_date.strftime('%d %B %Y')
+                return f"{growth:,}"
+            else:
+                date_str = f"с {start_date.strftime('%d %B %Y')} по {end_date.strftime('%d %B %Y')}"
+                return f"{growth:,}"
 
         elif parsed_query.intent == "total_views_period":
             start_date = parsed_query.parameters.get("start_date")
