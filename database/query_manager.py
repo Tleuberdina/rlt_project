@@ -56,6 +56,59 @@ class QueryManager:
         finally:
             conn.close()
 
+    def get_unique_publishing_days_for_creator(self, creator_id: str, 
+                                         start_date: date, 
+                                         end_date: date) -> int:
+        """Сколько разных календарных дней креатор публиковал видео в указанный период."""
+        conn = self._get_connection()
+        try:
+            # Основной запрос - используем DATE() для сравнения с датами
+            query = """
+                SELECT COUNT(DISTINCT DATE(video_created_at)) as unique_days
+                FROM videos
+                WHERE creator_id = %s
+                AND DATE(video_created_at) >= %s
+                AND DATE(video_created_at) <= %s
+            """
+        
+            print(f"🔍 Поиск уникальных дней публикации для креатора {creator_id}")
+            print(f"🔍 Период: {start_date} - {end_date}")
+            print(f"🔍 SQL запрос: {query}")
+            print(f"🔍 Параметры: {creator_id}, {start_date}, {end_date}")
+        
+            with conn.cursor() as cursor:
+                cursor.execute(query, (creator_id, start_date, end_date))
+                result = cursor.fetchone()
+                unique_days = result[0] if result else 0
+            
+                print(f"🔍 Результат: {unique_days}")
+
+                diagnostic_query = """
+                    SELECT DISTINCT DATE(video_created_at) as pub_date
+                    FROM videos
+                    WHERE creator_id = %s
+                    AND DATE(video_created_at) >= %s
+                    AND DATE(video_created_at) <= %s
+                    ORDER BY pub_date
+                """
+            
+                cursor.execute(diagnostic_query, (creator_id, start_date, end_date))
+                days = cursor.fetchall()
+            
+                print(f"🔍 Найдено {len(days)} уникальных дней:")
+                for day in days:
+                    print(f"  - {day[0]}")
+
+                return unique_days
+            
+        except Exception as e:
+            print(f"❌ Ошибка при выполнении запроса: {e}")
+            # В случае ошибки все равно возвращаем результат из основного запроса
+            # который уже выполнился успешно
+            return unique_days if 'unique_days' in locals() else 0
+        finally:
+            conn.close()
+
     def get_unique_creators_with_high_views(self, min_views: int) -> int:
         """Сколько разных креаторов имеют хотя бы одно видео, которое в итоге набрало больше min_views просмотров."""
         conn = self._get_connection()

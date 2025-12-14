@@ -160,6 +160,45 @@ class VideoStatsBot:
         logger.info(f"Получен запрос: {user_query}")
         
         try:
+            # ПРОВЕРКА: Если это запрос об уникальных днях, обрабатываем отдельно
+            user_query_lower = user_query.lower()
+            if 'разных календарных днях' in user_query_lower or 'публиковал хотя бы одно видео' in user_query_lower:
+                # Извлекаем ID креатора
+                import re
+                id_match = re.search(r'id\s+([a-f0-9]{32})', user_query_lower)
+                if id_match:
+                    creator_id = id_match.group(1)
+                
+                    # Извлекаем месяц и год
+                    from datetime import date
+                    month_map = {
+                        'января': 1, 'февраля': 2, 'марта': 3, 'апреля': 4,
+                        'мая': 5, 'июня': 6, 'июля': 7, 'августа': 8,
+                        'сентября': 9, 'октября': 10, 'ноября': 11, 'декабря': 12
+                    }
+                
+                    # Ищем "ноября 2025"
+                    month_match = re.search(r'(' + '|'.join(month_map.keys()) + r')\s+(\d{4})', user_query_lower)
+                    if month_match:
+                        month_name = month_match.group(1)
+                        year = int(month_match.group(2))
+                        month = month_map[month_name]
+                    
+                        start_date = date(year, month, 1)
+                        if month == 12:
+                            end_date = date(year + 1, 1, 1) - timedelta(days=1)
+                        else:
+                            end_date = date(year, month + 1, 1) - timedelta(days=1)
+                    
+                        # Считаем уникальные дни
+                        unique_days = self.query_manager.get_unique_publishing_days_for_creator(
+                            creator_id, start_date, end_date
+                        )
+                    
+                        response = f"{unique_days}"
+                        await message.answer(response)
+                        logger.info(f"📤 Отправлен ответ: {response}")
+                        return
             # Распознаем намерение пользователя
             parsed_query = self.nlp.parse_query(user_query)
             logger.info(f"🎯 Распознан интент: {parsed_query.intent}")
@@ -275,35 +314,93 @@ class VideoStatsBot:
                 return f"{growth:,}"
 
         elif parsed_query.intent == "total_views_period":
-            start_date = parsed_query.parameters.get("start_date")
-            end_date = parsed_query.parameters.get("end_date")
-        
+            creator_id = parsed_query.get("creator_id")
+            start_date = parsed_query.get("start_date")
+            end_date = parsed_query.get("end_date", start_date)
+            start_time = parsed_query.get("start_time")
+            end_time = parsed_query.get("end_time")
             logger.info(f"📊 Суммарные просмотры за период: start_date={start_date}, end_date={end_date}")
         
-            if not start_date or not end_date:
-                # Пробуем извлечь даты из оригинального запроса более универсально
-                logger.info(f"⚠️ Даты не найдены в параметрах, парсим из запроса...")
-            
-                # Используем NLP процессор для парсинга даты из запроса
-                dates = self.nlp._parse_dates_from_query(parsed_query.original_query)
-            
-                if dates:
-                    start_date, end_date = dates
-                    logger.info(f"📅 Найдены даты в запросе: {start_date} - {end_date}")
+            original_query_lower = parsed_query.original_query.lower()
+
+            # Проверяем, не является ли это запросом об уникальных днях публикации
+            is_unique_days_query = any(keyword in original_query_lower for keyword in [
+                'сколки разных календарных днях',
+                'в скольких днях',
+                'публиковал хотя бы одно видео',
+                'дней публикации',
+                'разных днях',
+                'календарных днях'
+            ])
+    
+            if is_unique_days_query and creator_id and start_date and end_date:
+                # Это запрос об уникальных днях публикации
+                unique_days = self.query_manager.get_unique_publishing_days_for_creator(
+                    creator_id, start_date, end_date
+                )
+        
+                month_name = start_date.strftime('%B %Y').lower()
+                return f"{month_name}"
+    
+            # Если есть время - это запрос для конкретного креатора с временным интервалом
+            elif start_time and end_time:
+                if not creator_id:
+                    return "❌ Для запроса с временным интервалом нужен ID креатора."
+        
+                growth = self.query_manager.get_total_views_growth_for_creator_with_time_period(
+                    creator_id, start_date, start_time, end_time
+                )
+        
+                time_period_str = f"с {start_time.strftime('%H:%M')} до {end_time.strftime('%H:%M')}"
+                date_str = start_date.strftime('%d %B %Y')
+                return f"{growth}"
+    
+            # Если нет времени, но есть ID креатора - суммарные просмотры креатора
+            elif creator_id:
+                total_views = self.query_manager.get_total_views_for_creator_period(creator_id, start_date, end_date)
+        
+                if start_date == end_date:
+                    date_str = start_date.strftime('%d %B %Y')
+                    return f"{total_views}"
                 else:
-                    # Пробуем найти месяц и год в тексте
-                    month_year = self._extract_month_year_from_text(parsed_query.original_query)
-                    if month_year:
-                        start_date, end_date = month_year
-                        logger.info(f"📅 Найден месяц и год: {start_date} - {end_date}")
-                    else:
-                        return "❌ Не указан период. Пример: 'Суммарные просмотры за июнь 2025' или 'Сколько просмотров набрали все видео в марте 2024'"
+                    date_str = f"с {start_date.strftime('%d %B %Y')} по {end_date.strftime('%d %B %Y')}"
+                    return f"{total_views:,}"
+    
+            # Если нет ID креатора и нет времени - это запрос про все видео
+            else:
+                total_views = self.query_manager.get_total_views_for_all_videos_period(start_date, end_date)
         
-            total_views = self.query_manager.get_total_views_for_period(start_date, end_date)
+                if start_date == end_date:
+                    date_str = start_date.strftime('%d %B %Y')
+                    return f"{total_views}"
+                else:
+                    date_str = f"с {start_date.strftime('%d %B %Y')} по {end_date.strftime('%d %B %Y')}"
+                    return f"{total_views:,}"
+
+            #if not start_date or not end_date:
+                ## Пробуем извлечь даты из оригинального запроса более универсально
+                #logger.info(f"⚠️ Даты не найдены в параметрах, парсим из запроса...")
+            
+                ## Используем NLP процессор для парсинга даты из запроса
+                #dates = self.nlp._parse_dates_from_query(parsed_query.original_query)
+            
+                #if dates:
+                    #start_date, end_date = dates
+                    #logger.info(f"📅 Найдены даты в запросе: {start_date} - {end_date}")
+                #else:
+                    ## Пробуем найти месяц и год в тексте
+                    #month_year = self._extract_month_year_from_text(parsed_query.original_query)
+                    #if month_year:
+                        #start_date, end_date = month_year
+                        #logger.info(f"📅 Найден месяц и год: {start_date} - {end_date}")
+                    #else:
+                        #return "❌ Не указан период. Пример: 'Суммарные просмотры за июнь 2025' или 'Сколько просмотров набрали все видео в марте 2024'"
         
-            # Форматируем красивый ответ
-            response = self._format_total_views_response(start_date, end_date, total_views)
-            return response
+            #total_views = self.query_manager.get_total_views_for_period(start_date, end_date)
+        
+            ## Форматируем красивый ответ
+            #response = self._format_total_views_response(start_date, end_date, total_views)
+            #return response
 
         elif parsed_query.intent == "negative_views_snapshots":
             count = self.query_manager.get_negative_views_snapshots_count()
@@ -320,6 +417,20 @@ class VideoStatsBot:
             if not creator_id:
                 return "❌ Не указан ID креатора. Пример: 'Сколько видео у креатора с id user123?'"
             
+             # Проверяем, не является ли это запросом об уникальных днях
+            original_lower = parsed_query.original_query.lower()
+            if any(keyword in original_lower for keyword in ['разных календарных днях', 'дней публикации', 'публиковал хотя бы']):
+                # Это запрос об уникальных днях публикации
+                if not start_date or not end_date:
+                    return "❌ Для подсчета дней публикации нужно указать период."
+        
+                unique_days = self.query_manager.get_unique_publishing_days_for_creator(
+                    creator_id, start_date, end_date
+                )
+        
+                month_name = start_date.strftime('%B %Y').lower()
+                return f"{month_name}"
+
             count = self.query_manager.get_videos_by_creator(
                 creator_id, start_date, end_date
             )

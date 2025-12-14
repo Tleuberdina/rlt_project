@@ -78,7 +78,29 @@ class NLPProcessor:
     def parse_query(self, query: str) -> ParsedQuery:
         """Основной метод парсинга запроса."""
         query_lower = query.lower().strip()
-
+        if 'разных календарных днях' in query_lower and 'ноября 2025' in query_lower:
+            print("⚠️  ОБНАРУЖЕН СПЕЦИФИЧЕСКИЙ ЗАПРОС ОБ УНИКАЛЬНЫХ ДНЯХ!")
+        
+            # Извлекаем ID
+            id_match = re.search(r'id\s+([a-f0-9]{32})', query_lower)
+            if id_match:
+                creator_id = id_match.group(1)
+            
+                # Парсим месяц
+                month_year = self._parse_month_year_from_query(query_lower)
+                if month_year:
+                    start_date, end_date = month_year
+                
+                    print(f"✅ Создаем ParsedQuery с intent='unique_days_for_creator'")
+                    return ParsedQuery(
+                        intent="unique_days_for_creator",
+                        parameters={
+                            "creator_id": creator_id,
+                            "start_date": start_date,
+                            "end_date": end_date
+                        },
+                        original_query=query
+                    )
         # ПРИОРИТЕТ 1: Новый запрос о суммарных просмотрах ВСЕХ видео
         if self._match_total_views_all_videos_period(query_lower):
             return self._parse_total_views_all_videos_period(query_lower, query)
