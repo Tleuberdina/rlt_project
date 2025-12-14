@@ -45,10 +45,6 @@ class QueryManager:
                 query += " AND DATE(video_created_at) <= %s"
                 params.append(end_date)
         
-            # ДЛЯ ОТЛАДКИ: выведем запрос
-            print(f"🔍 SQL запрос: {query}")
-            print(f"🔍 Параметры: {params}")
-        
             with conn.cursor() as cursor:
                 cursor.execute(query, params)
                 result = cursor.fetchone()
@@ -70,18 +66,11 @@ class QueryManager:
                 AND DATE(video_created_at) >= %s
                 AND DATE(video_created_at) <= %s
             """
-        
-            print(f"🔍 Поиск уникальных дней публикации для креатора {creator_id}")
-            print(f"🔍 Период: {start_date} - {end_date}")
-            print(f"🔍 SQL запрос: {query}")
-            print(f"🔍 Параметры: {creator_id}, {start_date}, {end_date}")
-        
+
             with conn.cursor() as cursor:
                 cursor.execute(query, (creator_id, start_date, end_date))
                 result = cursor.fetchone()
                 unique_days = result[0] if result else 0
-            
-                print(f"🔍 Результат: {unique_days}")
 
                 diagnostic_query = """
                     SELECT DISTINCT DATE(video_created_at) as pub_date
@@ -93,16 +82,10 @@ class QueryManager:
                 """
             
                 cursor.execute(diagnostic_query, (creator_id, start_date, end_date))
-                days = cursor.fetchall()
-            
-                print(f"🔍 Найдено {len(days)} уникальных дней:")
-                for day in days:
-                    print(f"  - {day[0]}")
 
                 return unique_days
             
         except Exception as e:
-            print(f"❌ Ошибка при выполнении запроса: {e}")
             # В случае ошибки все равно возвращаем результат из основного запроса
             # который уже выполнился успешно
             return unique_days if 'unique_days' in locals() else 0
@@ -110,7 +93,10 @@ class QueryManager:
             conn.close()
 
     def get_unique_creators_with_high_views(self, min_views: int) -> int:
-        """Сколько разных креаторов имеют хотя бы одно видео, которое в итоге набрало больше min_views просмотров."""
+        """
+        Сколько разных креаторов имеют хотя бы одно видео,
+        которое в итоге набрало больше min_views просмотров.
+        """
         conn = self._get_connection()
         try:
             # Используем максимальное значение просмотров из всех снапшотов видео
@@ -130,14 +116,12 @@ class QueryManager:
                 )
             """
         
-            print(f"🔍 Поиск уникальных креаторов с видео > {min_views} просмотров (с учетом снапшотов)")
-        
             with conn.cursor() as cursor:
                 cursor.execute(query, [min_views, min_views])
                 result = cursor.fetchone()
                 count = result[0] if result else 0
             
-                # Альтернативный более точный запрос
+                # Более точный запрос
                 query_alt = """
                     WITH video_max_views AS (
                         SELECT 
@@ -160,9 +144,6 @@ class QueryManager:
                 result_alt = cursor.fetchone()
                 count_alt = result_alt[0] if result_alt else 0
             
-                print(f"🔍 Результат (v1): {count}")
-                print(f"🔍 Результат (v2 с макс. значениями): {count_alt}")
-            
                 return count_alt  # Возвращаем более точный результат
         finally:
             conn.close()
@@ -173,9 +154,6 @@ class QueryManager:
         try:
             start_datetime = datetime.combine(start_date, datetime.min.time())
             end_datetime = datetime.combine(end_date, datetime.max.time())
-        
-            print(f"DEBUG: Запрос суммарных просмотров всех видео")
-            print(f"DEBUG: Период: {start_datetime} - {end_datetime}")
         
             # Вариант 1: Сумма views_count из таблицы videos (итоговые просмотры на момент последнего замера)
             query = """
@@ -200,9 +178,6 @@ class QueryManager:
                 """, (start_datetime, end_datetime))
             
                 stats = cursor.fetchone()
-                print(f"DEBUG: Найдено видео: {stats[0] if stats else 0}")
-                print(f"DEBUG: Суммарные просмотры (сырые): {stats[1] if stats else 0}")
-                print(f"DEBUG: Итоговый результат: {total_views}")
             
                 return total_views
         finally:
@@ -212,15 +187,15 @@ class QueryManager:
                                                        target_date: date,
                                                        start_time: time,
                                                        end_time: time) -> int:
-        """На сколько просмотров суммарно выросли все видео креатора в указанный временной интервал."""
+        """
+        На сколько просмотров суммарно выросли все видео
+        креатора в указанный временной интервал.
+        """
         conn = self._get_connection()
         try:
             # Создаем полные datetime объекты
             start_datetime = datetime.combine(target_date, start_time)
             end_datetime = datetime.combine(target_date, end_time)
-        
-            print(f"DEBUG: Запрос для креатора {creator_id}")
-            print(f"DEBUG: Период: {start_datetime} - {end_datetime}")
         
             query = """
                 SELECT COALESCE(SUM(vs.delta_views_count), 0)
@@ -248,13 +223,6 @@ class QueryManager:
                     AND vs.delta_views_count > 0
                     ORDER BY vs.created_at
                 """, (creator_id, start_datetime, end_datetime))
-            
-                snapshots = cursor.fetchall()
-                print(f"DEBUG: Найдено {len(snapshots)} снапшотов с ростом просмотров")
-                for video_id, created_at, delta in snapshots:
-                    print(f"  - {video_id}: {created_at} (+{delta})")
-            
-                print(f"DEBUG: Итоговый суммарный рост: {total_growth}")
             
                 return total_growth
         finally:
@@ -373,7 +341,6 @@ class QueryManager:
                 result = cursor.fetchone()
                 return result[0] if result else None
         except Exception as e:
-            print(f"Ошибка выполнения запроса: {e}")
             return None
         finally:
             conn.close()

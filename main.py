@@ -5,7 +5,7 @@ from config.config import Config
 
 
 async def main_async():
-    """Асинхронная главная функция"""
+    """Асинхронная главная функция."""
     try:
         # Проверяем конфигурацию
         Config.validate()

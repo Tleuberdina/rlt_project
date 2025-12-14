@@ -79,7 +79,6 @@ class NLPProcessor:
         """Основной метод парсинга запроса."""
         query_lower = query.lower().strip()
         if 'разных календарных днях' in query_lower and 'ноября 2025' in query_lower:
-            print("⚠️  ОБНАРУЖЕН СПЕЦИФИЧЕСКИЙ ЗАПРОС ОБ УНИКАЛЬНЫХ ДНЯХ!")
         
             # Извлекаем ID
             id_match = re.search(r'id\s+([a-f0-9]{32})', query_lower)
@@ -91,7 +90,6 @@ class NLPProcessor:
                 if month_year:
                     start_date, end_date = month_year
                 
-                    print(f"✅ Создаем ParsedQuery с intent='unique_days_for_creator'")
                     return ParsedQuery(
                         intent="unique_days_for_creator",
                         parameters={
@@ -246,7 +244,7 @@ class NLPProcessor:
 
     def _parse_month_year_from_query(self, query: str) -> Optional[Tuple[date, date]]:
         """Парсинг месяца и года из запроса."""
-        # Паттерны: "в июне 2025 года", "за июнь 2025", "июне 2025"
+        # Паттерны (примеры): "в июне 2025 года", "за июнь 2025", "июне 2025"
         month_pattern = r'(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})'
         match = re.search(month_pattern, query)
     
@@ -298,8 +296,6 @@ class NLPProcessor:
     def _match_total_views_period(self, query: str) -> Optional[Dict[str, Any]]:
         """Какое суммарное количество просмотров набрали все видео за период."""
         query_lower = query.lower()
-    
-        print(f"🔍 Анализ запроса для total_views_period: {query_lower}")  # Отладка
     
          # Базовые проверки
         has_total_keywords = any(word in query_lower for word in [
@@ -461,7 +457,6 @@ class NLPProcessor:
             if match:
                 creator_id = match.group(1)
                 matched_pattern = pattern
-                print(f"🔍 Найден ID: {creator_id} по паттерну: {pattern}")  # Отладка
                 break
         
         # Если нашли ID, проверяем что это не общий запрос про видео
@@ -482,7 +477,6 @@ class NLPProcessor:
                 "start_date": dates[0] if dates else None,
                 "end_date": dates[1] if dates else None
             }
-        print(f"❌ ID не найден или невалиден")
         return None
     
     def _match_videos_by_views(self, query: str) -> Optional[Dict[str, Any]]:
@@ -593,10 +587,7 @@ class NLPProcessor:
 
     def _parse_month_year_from_text(self, query: str) -> Optional[Dict[str, Any]]:
         """Парсинг месяца и года из текста запроса."""
-        query_lower = query.lower()
-    
-        print(f"🔍 Парсим месяц и год из: {query_lower}")  # Отладка
-    
+        query_lower = query.lower()    
         # Проверяем все падежи месяцев
         month_variants = {
             'января': 1, 'январе': 1,
@@ -614,7 +605,7 @@ class NLPProcessor:
         }
     
         for month_name, month_num in month_variants.items():
-            # Ищем "в июне 2025" или "июня 2025 года"
+            # Ищем например "в июне 2025" или "июня 2025 года"
             patterns = [
                 rf'в\s+{month_name}\s+(\d{{4}})\s*года?',
                 rf'{month_name}\s+(\d{{4}})\s*года?',
@@ -632,13 +623,11 @@ class NLPProcessor:
                         start_date = date(year, month_num, 1)
                         end_date = date(year, month_num, last_day)
                     
-                        print(f"✅ Распарсен: {month_name} {year} -> {start_date} - {end_date}")
                         return {
                             "start_date": start_date,
                             "end_date": end_date
                         }
                     except Exception as e:
-                        print(f"❌ Ошибка парсинга: {e}")
                         continue
     
         # Если не нашли, пробуем просто найти год
@@ -670,7 +659,6 @@ class NLPProcessor:
                 start_date = date(year, month_num, 1)
                 end_date = date(year, month_num, last_day)
             
-                print(f"✅ Найден по контексту: {year} месяц {month_num}")
                 return {
                     "start_date": start_date,
                     "end_date": end_date
@@ -697,8 +685,6 @@ class NLPProcessor:
         elif "месяц" in query or "месяца" in query:
             month_ago = today - timedelta(days=30)
             return month_ago, today
-        
-        print(f"🔍 Парсим даты из запроса: {query}")
 
         # 1. Проверяем диапазон с разными предлогами
         range_patterns = [
@@ -712,7 +698,6 @@ class NLPProcessor:
         for pattern in range_patterns:
             match = re.search(pattern, query)
             if match:
-                print(f"✅ Найден диапазон по паттерну: {pattern}")
                 if pattern == range_patterns[0]:  # "с 1 по 5 ноября 2025"
                     day_start = int(match.group(1))
                     day_end = int(match.group(2))
@@ -722,7 +707,6 @@ class NLPProcessor:
                     month = self.month_map[month_name]
                     start_date = date(year, month, day_start)
                     end_date = date(year, month, day_end)
-                    print(f"✅ Диапазон: {start_date} - {end_date}")
                     return start_date, end_date
                 elif pattern == range_patterns[1]:  # "с 1 ноября 2025 по 5 ноября 2025"
                     day_start = int(match.group(1))
@@ -736,7 +720,6 @@ class NLPProcessor:
                     month_end = self.month_map[month_end_name]
                     start_date = date(year_start, month_start, day_start)
                     end_date = date(year_end, month_end, day_end)
-                    print(f"✅ Диапазон: {start_date} - {end_date}")
                     return start_date, end_date
     
         # Проверяем одиночную дату: "28 ноября 2025"
@@ -765,12 +748,10 @@ class NLPProcessor:
             day = int(iso_match.group(3))
             d = date(year, month, day)
             return d, d
-        print(f"❌ Не удалось распарсить даты из запроса: {query}")
         return None
     
     def _advanced_analysis(self, query_lower: str, original_query: str) -> ParsedQuery:
         """Расширенный анализ запроса с весами ключевых слов."""
-        print(f"🔍 Расширенный анализ запроса: {query_lower}")
         # Веса для разных типов запросов (обновленные)
         keyword_weights = {
             "total_videos": {
@@ -921,7 +902,6 @@ class NLPProcessor:
             id_match = re.search(r'[a-f0-9]{32}', query_lower)
             if id_match:
                 creator_id = id_match.group(0)
-                print(f"🔍 Найден ID в расширенном анализе: {creator_id}")
             
                 if len(creator_id) == 32:
                     params["creator_id"] = creator_id

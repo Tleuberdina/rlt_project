@@ -6,7 +6,7 @@ from config.config import Config
 
 
 def get_db_connection():
-    """Создание подключения к базе данных"""
+    """Создание подключения к базе данных."""
     params = Config.get_db_params()
     return psycopg2.connect(**params)
 

@@ -15,10 +15,6 @@
 
 ### Команда для запуска проекта локально: python main.py
 
-### Команда для запуска теста проекта: python tests/test_nlp.py
-
-### Команда для запуска теста PostgreSQL: python tests/test_postgres.py
-
 ### Шаги развертывания
 1. Клонировать репозиторий и перейти в него в командной строке:
    #### git clone git@github.com:Tleuberdina/rlt_project.git

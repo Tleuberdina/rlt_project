@@ -35,15 +35,8 @@ class VideoStatsBot:
         self.dp.message.register(self.message_handler)
     
     def _extract_month_year_from_text(self, text: str) -> Optional[Tuple[date, date]]:
-        """Извлечение месяца и года из текста запроса."""
-        #import re
-        #import calendar
-        #from datetime import date
-        #from typing import Optional, Tuple
-    
+        """Извлечение месяца и года из текста запроса."""    
         text_lower = text.lower()
-    
-        # Месяцы на русском
         month_map = {
             'января': 1, 'февраля': 2, 'марта': 3, 'апреля': 4,
             'мая': 5, 'июня': 6, 'июля': 7, 'августа': 8,
@@ -55,14 +48,13 @@ class VideoStatsBot:
     
         # Ищем любой месяц и год
         for month_name, month_num in month_map.items():
-            # Паттерны: "в июне 2025", "за июль 2024", "июня 2025 года"
             patterns = [
                 rf'в\s+{month_name}\s+(\d{{4}})',
                 rf'за\s+{month_name}\s+(\d{{4}})',
                 rf'{month_name}\s+(\d{{4}})\s+года',
                 rf'{month_name}\s+(\d{{4}})',
             ]
-        
+
             for pattern in patterns:
                 match = re.search(pattern, text_lower)
                 if match:
@@ -91,7 +83,7 @@ class VideoStatsBot:
 
     def _format_total_views_response(self, start_date: date, end_date: date, total_views: int) -> str:
         """Форматирование ответа для суммарных просмотров."""
-        # Месяцы на русском в предложном падеже
+        # Месяцы в предложном падеже
         month_names = {
             1: 'январе', 2: 'феврале', 3: 'марте', 4: 'апреле',
             5: 'мае', 6: 'июне', 7: 'июле', 8: 'августе',
@@ -133,7 +125,7 @@ class VideoStatsBot:
         await message.answer(welcome_text)
     
     async def help_handler(self, message: types.Message):
-        """Обработчик команды /helpю"""
+        """Обработчик команды /help."""
         help_text = """
         🤖 <b>Помощь по боту:</b>
         
@@ -177,7 +169,7 @@ class VideoStatsBot:
                         'сентября': 9, 'октября': 10, 'ноября': 11, 'декабря': 12
                     }
                 
-                    # Ищем "ноября 2025"
+                    # Ищем например "ноября 2025"
                     month_match = re.search(r'(' + '|'.join(month_map.keys()) + r')\s+(\d{4})', user_query_lower)
                     if month_match:
                         month_name = month_match.group(1)
@@ -229,7 +221,7 @@ class VideoStatsBot:
         
         if parsed_query.intent == "total_videos":
             count = self.query_manager.get_total_videos()
-            return f"{count:,}"
+            return f"{count}"
 
         if parsed_query.intent == "total_views_all_videos_period":
             start_date = parsed_query.get("start_date")
@@ -243,7 +235,7 @@ class VideoStatsBot:
         
             if start_date == end_date:
                 date_str = start_date.strftime('%d %B %Y')
-                return f"{total_views:,}"
+                return f"{total_views}"
             else:
                 # Если это месяц (первое и последнее число месяца)
                 if start_date.day == 1 and end_date == self._get_last_day_of_month(start_date):
@@ -308,10 +300,10 @@ class VideoStatsBot:
             time_period_str = f"с {start_time.strftime('%H:%M')} до {end_time.strftime('%H:%M')}"
             if start_date == end_date:
                 date_str = start_date.strftime('%d %B %Y')
-                return f"{growth:,}"
+                return f"{growth}"
             else:
                 date_str = f"с {start_date.strftime('%d %B %Y')} по {end_date.strftime('%d %B %Y')}"
-                return f"{growth:,}"
+                return f"{growth}"
 
         elif parsed_query.intent == "total_views_period":
             creator_id = parsed_query.get("creator_id")
@@ -364,7 +356,7 @@ class VideoStatsBot:
                     return f"{total_views}"
                 else:
                     date_str = f"с {start_date.strftime('%d %B %Y')} по {end_date.strftime('%d %B %Y')}"
-                    return f"{total_views:,}"
+                    return f"{total_views}"
     
             # Если нет ID креатора и нет времени - это запрос про все видео
             else:
@@ -377,34 +369,9 @@ class VideoStatsBot:
                     date_str = f"с {start_date.strftime('%d %B %Y')} по {end_date.strftime('%d %B %Y')}"
                     return f"{total_views:,}"
 
-            #if not start_date or not end_date:
-                ## Пробуем извлечь даты из оригинального запроса более универсально
-                #logger.info(f"⚠️ Даты не найдены в параметрах, парсим из запроса...")
-            
-                ## Используем NLP процессор для парсинга даты из запроса
-                #dates = self.nlp._parse_dates_from_query(parsed_query.original_query)
-            
-                #if dates:
-                    #start_date, end_date = dates
-                    #logger.info(f"📅 Найдены даты в запросе: {start_date} - {end_date}")
-                #else:
-                    ## Пробуем найти месяц и год в тексте
-                    #month_year = self._extract_month_year_from_text(parsed_query.original_query)
-                    #if month_year:
-                        #start_date, end_date = month_year
-                        #logger.info(f"📅 Найден месяц и год: {start_date} - {end_date}")
-                    #else:
-                        #return "❌ Не указан период. Пример: 'Суммарные просмотры за июнь 2025' или 'Сколько просмотров набрали все видео в марте 2024'"
-        
-            #total_views = self.query_manager.get_total_views_for_period(start_date, end_date)
-        
-            ## Форматируем красивый ответ
-            #response = self._format_total_views_response(start_date, end_date, total_views)
-            #return response
-
         elif parsed_query.intent == "negative_views_snapshots":
             count = self.query_manager.get_negative_views_snapshots_count()
-            return f"{count:,}"
+            return f"{count}"
     
         elif parsed_query.intent == "videos_by_creator":
             creator_id = parsed_query.parameters.get("creator_id")
@@ -468,7 +435,7 @@ class VideoStatsBot:
             elif end_date:
                 date_info = f" до {end_date}"
             
-            return f"{count:,}"
+            return f"{count}"
         
         elif parsed_query.intent == "videos_by_views":
             min_views = parsed_query.parameters.get("min_views", 100000)
@@ -507,12 +474,8 @@ class VideoStatsBot:
                     logger.error(f"Ошибка при получении даты: {e}")
                     return "❌ Не удалось определить дату для анализа"
     
-            growth = self.query_manager.get_total_views_growth_on_date(target_date)
-    
-            if growth == 0:
-                return f"📊 За {target_date} не было зафиксировано прироста просмотров"
-    
-            return f"{growth:,}"
+            growth = self.query_manager.get_total_views_growth_on_date(target_date)    
+            return f"{growth}"
         
         elif parsed_query.intent == "unique_growth":
             target_date = parsed_query.parameters.get("date")
@@ -530,7 +493,7 @@ class VideoStatsBot:
                 return "❌ Не указан ID креатора. Пример: 'Сколько видео у креатора с id abc123 набрало больше 10000 просмотров?'"
     
             count = self.query_manager.get_videos_by_creator_with_views(creator_id, min_views)
-            return f"{count:,}"
+            return f"{count}"
         
         else:
             # Для unknown запросов даем подсказки
