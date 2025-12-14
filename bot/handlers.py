@@ -1,7 +1,7 @@
 import logging
 import asyncio
 import re
-from datetime import date, time, timedelta
+from datetime import datetime, date, time, timedelta
 from typing import Optional, Tuple
 import calendar
 from aiogram import Bot, Dispatcher, types
@@ -80,6 +80,14 @@ class VideoStatsBot:
                         continue
     
         return None
+
+    def _get_last_day_of_month(self, any_date: date) -> date:
+        """Получить последний день месяца."""
+        # Первый день следующего месяца минус один день
+        if any_date.month == 12:
+            return date(any_date.year + 1, 1, 1) - timedelta(days=1)
+        else:
+            return date(any_date.year, any_date.month + 1, 1) - timedelta(days=1)
 
     def _format_total_views_response(self, start_date: date, end_date: date, total_views: int) -> str:
         """Форматирование ответа для суммарных просмотров."""
@@ -184,12 +192,52 @@ class VideoStatsBot:
             count = self.query_manager.get_total_videos()
             return f"{count:,}"
 
+        if parsed_query.intent == "total_views_all_videos_period":
+            start_date = parsed_query.get("start_date")
+            end_date = parsed_query.get("end_date", start_date)
+        
+            if not start_date:
+                return "❌ Не указан период."
+        
+            # Получаем суммарные просмотры всех видео за период
+            total_views = self.query_manager.get_total_views_for_all_videos_period(start_date, end_date)
+        
+            if start_date == end_date:
+                date_str = start_date.strftime('%d %B %Y')
+                return f"{total_views:,}"
+            else:
+                # Если это месяц (первое и последнее число месяца)
+                if start_date.day == 1 and end_date == self._get_last_day_of_month(start_date):
+                    month_name = start_date.strftime('%B %Y').lower()
+                    return f"{total_views:,}"
+                else:
+                    date_str = f"с {start_date.strftime('%d %B %Y')} по {end_date.strftime('%d %B %Y')}"
+                    return f"{total_views:,}"
+    
         if parsed_query.intent == "total_views_period":
             creator_id = parsed_query.get("creator_id")
             start_date = parsed_query.get("start_date")
             start_time = parsed_query.get("start_time")
             end_time = parsed_query.get("end_time")
-        
+
+            # Если нет ID креатора, но есть дата - это запрос про все видео
+            if not creator_id and start_date:
+                end_date = parsed_query.get("end_date", start_date)
+            
+                if start_time and end_time:
+                    # Это запрос про прирост просмотров всех видео в интервале времени
+                    return "❌ Для запроса с временным интервалом нужен ID креатора."
+                else:
+                    # Это запрос про суммарные просмотры всех видео за период
+                    total_views = self.query_manager.get_total_views_for_all_videos_period(start_date, end_date)
+                
+                    if start_date == end_date:
+                        date_str = start_date.strftime('%d %B %Y')
+                        return f"{total_views}"
+                    else:
+                        date_str = f"с {start_date.strftime('%d %B %Y')} по {end_date.strftime('%d %B %Y')}"
+                        return f"{total_views}"
+
             if not creator_id:
                 return "❌ Не указан ID креатора."
         

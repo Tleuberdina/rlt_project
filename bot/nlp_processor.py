@@ -78,10 +78,16 @@ class NLPProcessor:
     def parse_query(self, query: str) -> ParsedQuery:
         """Основной метод парсинга запроса."""
         query_lower = query.lower().strip()
-        
-        # ПРИОРИТЕТ 1: Новый запрос с временным интервалом
+
+        # ПРИОРИТЕТ 1: Новый запрос о суммарных просмотрах ВСЕХ видео
+        if self._match_total_views_all_videos_period(query_lower):
+            return self._parse_total_views_all_videos_period(query_lower, query)
+    
+        # ПРИОРИТЕТ 2: Запрос с временным интервалом для конкретного креатора
         if self._match_total_views_with_time_period(query_lower):
             return self._parse_total_views_with_time_period(query_lower, query)
+    
+        # ПРИОРИТЕТ 3: Точные совпадения по паттернам
 
         # 1. Суммарные просмотры за период
         total_views_period_match = self._match_total_views_period(query_lower)
@@ -152,8 +158,45 @@ class NLPProcessor:
                 original_query=query
             )
         
-        # ПРИОРИТЕТ 2: Расширенный анализ по ключевым словам
+        # ПРИОРИТЕТ 4: Расширенный анализ по ключевым словам
         return self._advanced_analysis(query_lower, query)
+
+    def _match_total_views_all_videos_period(self, query: str) -> bool:
+        """Определяет, является ли запрос о суммарных просмотрах всех видео за период."""
+        keywords = {
+            'суммарное количество просмотров',
+            'суммарное число просмотров',
+            'сколько всего просмотров',
+            'сумма просмотров',
+            'набрали все видео',
+            'всего просмотров набрали'
+        }
+    
+        # Проверяем наличие ключевых слов про ВСЕ видео
+        has_all_keywords = any(keyword in query for keyword in [
+            'все видео', 'всех видео', 'любого автора', 'любого креатора'
+        ]) or ('креатора' not in query and 'автора' not in query and 'id' not in query)
+    
+        has_views_keywords = any(keyword in query for keyword in keywords)
+        has_date_period = bool(self._parse_dates_from_query(query))
+    
+        return has_views_keywords and has_date_period and has_all_keywords
+
+    def _parse_total_views_all_videos_period(self, query: str, original_query: str) -> ParsedQuery:
+        """Парсинг запроса о суммарных просмотрах всех видео за период."""
+        params = {}
+    
+        # Парсим даты
+        dates = self._parse_dates_from_query(query)
+        if dates:
+            params["start_date"] = dates[0]
+            params["end_date"] = dates[1] if len(dates) > 1 else dates[0]
+    
+        return ParsedQuery(
+            intent="total_views_all_videos_period",
+            parameters=params,
+            original_query=original_query
+        )
 
     def _match_total_views_with_time_period(self, query: str) -> bool:
         """Определяет, является ли запрос о суммарном росте просмотров с временным интервалом."""
@@ -178,7 +221,31 @@ class NLPProcessor:
         has_date = bool(self._parse_dates_from_query(query))
         
         return has_keywords and has_time_period and has_creator_id and has_date
+
+    def _parse_month_year_from_query(self, query: str) -> Optional[Tuple[date, date]]:
+        """Парсинг месяца и года из запроса."""
+        # Паттерны: "в июне 2025 года", "за июнь 2025", "июне 2025"
+        month_pattern = r'(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})'
+        match = re.search(month_pattern, query)
     
+        if match:
+            month_name = match.group(1)
+            year = int(match.group(2))
+            month = self.month_map[month_name]
+        
+            # Первый день месяца
+            start_date = date(year, month, 1)
+        
+            # Последний день месяца
+            if month == 12:
+                end_date = date(year + 1, 1, 1) - timedelta(days=1)
+            else:
+                end_date = date(year, month + 1, 1) - timedelta(days=1)
+        
+            return start_date, end_date
+    
+        return None
+
     def _parse_total_views_with_time_period(self, query: str, original_query: str) -> ParsedQuery:
         """Парсинг запроса о суммарном росте просмотров с временным интервалом."""
         params = {}
@@ -607,50 +674,23 @@ class NLPProcessor:
             month_ago = today - timedelta(days=30)
             return month_ago, today
         
-        # Паттерн 1: "с 1 ноября 2025 по 5 ноября 2025"
-        range_pattern_full = r'с\s+(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})\s+по\s+(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})'
-    
-        # Паттерн 2: "с 1 по 5 ноября 2025" (один месяц и год)
-        range_pattern_simple = r'с\s+(\d{1,2})\s+по\s+(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})'
-    
-        # Сначала пробуем полный паттерн
-        range_match_full = re.search(range_pattern_full, query)
-        if range_match_full:
-            day_start = int(range_match_full.group(1))
-            month_name_start = range_match_full.group(2)
-            year_start = int(range_match_full.group(3))
-            day_end = int(range_match_full.group(4))
-            month_name_end = range_match_full.group(5)
-            year_end = int(range_match_full.group(6))
-        
-            month_start = self.month_map[month_name_start]
-            month_end = self.month_map[month_name_end]
-        
-            start_date = date(year_start, month_start, day_start)
-            end_date = date(year_end, month_end, day_end)
-        
-            print(f"📅 Распарсен полный диапазон: {start_date} - {end_date}")
-            return start_date, end_date
-    
-        # Пробуем простой паттерн
-        range_match_simple = re.search(range_pattern_simple, query)
-        if range_match_simple:
-            day_start = int(range_match_simple.group(1))
-            day_end = int(range_match_simple.group(2))
-            month_name = range_match_simple.group(3)
-            year = int(range_match_simple.group(4))
+        # Проверяем диапазон: "с 1 по 5 ноября 2025"
+        range_pattern = r'с\s+(\d{1,2})\s+по\s+(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})'
+        range_match = re.search(range_pattern, query)
+        if range_match:
+            day_start = int(range_match.group(1))
+            day_end = int(range_match.group(2))
+            month_name = range_match.group(3)
+            year = int(range_match.group(4))
         
             month = self.month_map[month_name]
             start_date = date(year, month, day_start)
             end_date = date(year, month, day_end)
         
-            print(f"📅 Распарсен простой диапазон: {start_date} - {end_date}")
             return start_date, end_date
     
-        # Паттерн для одиночной даты: "28 ноября 2025"
+        # Проверяем одиночную дату: "28 ноября 2025"
         single_pattern = r'(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})'
-    
-        # Проверяем одиночную дату
         single_match = re.search(single_pattern, query)
         if single_match:
             day = int(single_match.group(1))
@@ -659,8 +699,12 @@ class NLPProcessor:
         
             month = self.month_map[month_name]
             d = date(year, month, day)
-            print(f"📅 Распарсена одиночная дата: {d}")
             return d, d
+    
+        # Проверяем месяц и год: "в июне 2025"
+        month_year = self._parse_month_year_from_query(query)
+        if month_year:
+            return month_year
     
         # Пытаемся найти дату в формате ГГГГ-ММ-ДД
         iso_pattern = r'(\d{4})-(\d{1,2})-(\d{1,2})'
@@ -670,10 +714,8 @@ class NLPProcessor:
             month = int(iso_match.group(2))
             day = int(iso_match.group(3))
             d = date(year, month, day)
-            print(f"📅 Распарсена ISO дата: {d}")
             return d, d
     
-        print(f"📅 Не удалось распарсить даты из запроса: {query}")
         return None
     
     def _advanced_analysis(self, query_lower: str, original_query: str) -> ParsedQuery:
@@ -702,6 +744,11 @@ class NLPProcessor:
                 "уникальн": 5, "разных": 5, "разные": 5, "новые": 1,
                 "получали": 3, "получало": 3, "отдельных": 2, "различных": 2,
                 "какие": 3
+            },
+            "total_views_all_videos_period": {
+                "суммарное": 3, "суммарный": 3, "сумма": 2, "всех": 3,
+                "все": 3, "любого": 2, "любые": 2, "опубликован": 2,
+                "набрали": 2, "просмотров": 3, "количество": 2
             },
             "total_views_period": {
                 "суммарное": 8, "сумма": 7, "общее": 6, "всего": 5,
@@ -739,8 +786,11 @@ class NLPProcessor:
         if 'суммарное количество просмотров' in query_lower:
             scores["total_views_period"] += 10
 
-        if 'все видео' in query_lower and 'просмотров' in query_lower:
-            scores["total_views_period"] += 5
+        # Специальное правило: если есть "все видео" и дата, но нет ID
+        if 'все видео' in query_lower and not ('креатора' in query_lower or 'автора' in query_lower):
+            # Проверяем есть ли дата
+            if self._parse_dates_from_query(query_lower):
+                scores["total_views_all_videos_period"] += 5
 
         # Специальные правила для комбинированных запросов
         if 'креатора' in query_lower and 'просмотров' in query_lower:

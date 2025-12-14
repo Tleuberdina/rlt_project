@@ -56,6 +56,47 @@ class QueryManager:
         finally:
             conn.close()
 
+    def get_total_views_for_all_videos_period(self, start_date: date, end_date: date) -> int:
+        """Суммарное количество просмотров всех видео за период."""
+        conn = self._get_connection()
+        try:
+            start_datetime = datetime.combine(start_date, datetime.min.time())
+            end_datetime = datetime.combine(end_date, datetime.max.time())
+        
+            print(f"DEBUG: Запрос суммарных просмотров всех видео")
+            print(f"DEBUG: Период: {start_datetime} - {end_datetime}")
+        
+            # Вариант 1: Сумма views_count из таблицы videos (итоговые просмотры на момент последнего замера)
+            query = """
+                SELECT COALESCE(SUM(v.views_count), 0)
+                FROM videos v
+                WHERE v.video_created_at >= %s
+                AND v.video_created_at <= %s
+            """
+        
+            with conn.cursor() as cursor:
+                cursor.execute(query, (start_datetime, end_datetime))
+                result = cursor.fetchone()
+                total_views = int(result[0]) if result else 0
+            
+                # Дополнительная диагностика
+                cursor.execute("""
+                    SELECT COUNT(*) as video_count, 
+                        SUM(views_count) as total_views_raw
+                    FROM videos 
+                    WHERE video_created_at >= %s 
+                    AND video_created_at <= %s
+                """, (start_datetime, end_datetime))
+            
+                stats = cursor.fetchone()
+                print(f"DEBUG: Найдено видео: {stats[0] if stats else 0}")
+                print(f"DEBUG: Суммарные просмотры (сырые): {stats[1] if stats else 0}")
+                print(f"DEBUG: Итоговый результат: {total_views}")
+            
+                return total_views
+        finally:
+            conn.close()
+
     def get_total_views_growth_for_creator_with_time_period(self, creator_id: str, 
                                                        target_date: date,
                                                        start_time: time,
