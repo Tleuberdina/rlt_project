@@ -433,10 +433,12 @@ class NLPProcessor:
         ]
         
         creator_id = None
+        matched_pattern = None
         for pattern in id_patterns:
-            match = re.search(pattern, query)
+            match = re.search(pattern, query_lower, re.IGNORECASE)
             if match:
                 creator_id = match.group(1)
+                matched_pattern = pattern
                 print(f"🔍 Найден ID: {creator_id} по паттерну: {pattern}")  # Отладка
                 break
         
@@ -458,7 +460,7 @@ class NLPProcessor:
                 "start_date": dates[0] if dates else None,
                 "end_date": dates[1] if dates else None
             }
-        
+        print(f"❌ ID не найден или невалиден")
         return None
     
     def _match_videos_by_views(self, query: str) -> Optional[Dict[str, Any]]:
@@ -674,20 +676,46 @@ class NLPProcessor:
             month_ago = today - timedelta(days=30)
             return month_ago, today
         
-        # Проверяем диапазон: "с 1 по 5 ноября 2025"
-        range_pattern = r'с\s+(\d{1,2})\s+по\s+(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})'
-        range_match = re.search(range_pattern, query)
-        if range_match:
-            day_start = int(range_match.group(1))
-            day_end = int(range_match.group(2))
-            month_name = range_match.group(3)
-            year = int(range_match.group(4))
-        
-            month = self.month_map[month_name]
-            start_date = date(year, month, day_start)
-            end_date = date(year, month, day_end)
-        
-            return start_date, end_date
+        print(f"🔍 Парсим даты из запроса: {query}")
+
+        # 1. Проверяем диапазон с разными предлогами
+        range_patterns = [
+            r'с\s+(\d{1,2})\s+по\s+(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})',
+            r'с\s+(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})\s+по\s+(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})',
+            r'от\s+(\d{1,2})\s+до\s+(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})',
+            r'(\d{1,2})\s*-\s*(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})',
+            r'(\d{1,2})\s*\.\s*(\d{1,2})\s*\.\s*(\d{4})\s*-\s*(\d{1,2})\s*\.\s*(\d{1,2})\s*\.\s*(\d{4})'
+        ]
+    
+        for pattern in range_patterns:
+            match = re.search(pattern, query)
+            if match:
+                print(f"✅ Найден диапазон по паттерну: {pattern}")
+                if pattern == range_patterns[0]:  # "с 1 по 5 ноября 2025"
+                    day_start = int(match.group(1))
+                    day_end = int(match.group(2))
+                    month_name = match.group(3)
+                    year = int(match.group(4))
+                
+                    month = self.month_map[month_name]
+                    start_date = date(year, month, day_start)
+                    end_date = date(year, month, day_end)
+                    print(f"✅ Диапазон: {start_date} - {end_date}")
+                    return start_date, end_date
+                elif pattern == range_patterns[1]:  # "с 1 ноября 2025 по 5 ноября 2025"
+                    day_start = int(match.group(1))
+                    month_start_name = match.group(2)
+                    year_start = int(match.group(3))
+                    day_end = int(match.group(4))
+                    month_end_name = match.group(5)
+                    year_end = int(match.group(6))
+                
+                    month_start = self.month_map[month_start_name]
+                    month_end = self.month_map[month_end_name]
+                    start_date = date(year_start, month_start, day_start)
+                    end_date = date(year_end, month_end, day_end)
+                    print(f"✅ Диапазон: {start_date} - {end_date}")
+                    return start_date, end_date
     
         # Проверяем одиночную дату: "28 ноября 2025"
         single_pattern = r'(\d{1,2})\s+(' + '|'.join(self.month_map.keys()) + r')\s+(\d{4})'
@@ -715,7 +743,7 @@ class NLPProcessor:
             day = int(iso_match.group(3))
             d = date(year, month, day)
             return d, d
-    
+        print(f"❌ Не удалось распарсить даты из запроса: {query}")
         return None
     
     def _advanced_analysis(self, query_lower: str, original_query: str) -> ParsedQuery:
