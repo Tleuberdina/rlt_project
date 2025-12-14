@@ -361,8 +361,17 @@ class VideoStatsBot:
         
         elif parsed_query.intent == "videos_by_views":
             min_views = parsed_query.parameters.get("min_views", 100000)
-            count = self.query_manager.get_videos_with_views_above(min_views)
-            return f"{count:,}"
+
+            # Проверяем, не является ли это запросом об уникальных креаторах
+            original_query_lower = parsed_query.original_query.lower()
+
+            if any(keyword in original_query_lower for keyword in ['разных креаторов', 'уникальных авторов', 'сколько креаторов', 'сколько авторов']):
+                # Это запрос об уникальных креаторах
+                count = self.query_manager.get_unique_creators_with_high_views(min_views)
+                return f"{count}"
+            else:
+                count = self.query_manager.get_videos_with_views_above(min_views)
+                return f"{count}"
         
         elif parsed_query.intent == "total_growth":
             target_date = parsed_query.parameters.get("date")

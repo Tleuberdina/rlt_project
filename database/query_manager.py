@@ -56,6 +56,64 @@ class QueryManager:
         finally:
             conn.close()
 
+    def get_unique_creators_with_high_views(self, min_views: int) -> int:
+        """Сколько разных креаторов имеют хотя бы одно видео, которое в итоге набрало больше min_views просмотров."""
+        conn = self._get_connection()
+        try:
+            # Используем максимальное значение просмотров из всех снапшотов видео
+            query = """
+                SELECT COUNT(DISTINCT v.creator_id) as unique_creators
+                FROM videos v
+                WHERE (
+                    -- Либо текущее значение в videos больше порога
+                    v.views_count > %s
+                    -- Либо максимальное значение из снапшотов больше порога
+                    OR EXISTS (
+                        SELECT 1 
+                        FROM video_snapshots vs 
+                        WHERE vs.video_id = v.id 
+                        AND vs.views_count > %s
+                    )
+                )
+            """
+        
+            print(f"🔍 Поиск уникальных креаторов с видео > {min_views} просмотров (с учетом снапшотов)")
+        
+            with conn.cursor() as cursor:
+                cursor.execute(query, [min_views, min_views])
+                result = cursor.fetchone()
+                count = result[0] if result else 0
+            
+                # Альтернативный более точный запрос
+                query_alt = """
+                    WITH video_max_views AS (
+                        SELECT 
+                            v.creator_id,
+                            v.id as video_id,
+                            GREATEST(
+                                v.views_count,
+                                COALESCE(MAX(vs.views_count), 0)
+                            ) as max_views_ever
+                        FROM videos v
+                        LEFT JOIN video_snapshots vs ON v.id = vs.video_id
+                        GROUP BY v.id, v.creator_id, v.views_count
+                    )
+                    SELECT COUNT(DISTINCT creator_id)
+                    FROM video_max_views
+                    WHERE max_views_ever > %s
+                """
+            
+                cursor.execute(query_alt, [min_views])
+                result_alt = cursor.fetchone()
+                count_alt = result_alt[0] if result_alt else 0
+            
+                print(f"🔍 Результат (v1): {count}")
+                print(f"🔍 Результат (v2 с макс. значениями): {count_alt}")
+            
+                return count_alt  # Возвращаем более точный результат
+        finally:
+            conn.close()
+
     def get_total_views_for_all_videos_period(self, start_date: date, end_date: date) -> int:
         """Суммарное количество просмотров всех видео за период."""
         conn = self._get_connection()
